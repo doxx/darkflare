@@ -11,6 +11,10 @@ build-all:
 	GOOS=linux GOARCH=amd64 go build -o $(OUTPUT_DIR)/darkflare-client-linux-amd64 client/main.go
 	GOOS=linux GOARCH=amd64 go build -o $(OUTPUT_DIR)/darkflare-server-linux-amd64 server/main.go
 	
+	# Linux ARM64 (aarch64)
+	GOOS=linux GOARCH=arm64 go build -o $(OUTPUT_DIR)/darkflare-client-linux-arm64 client/main.go
+	GOOS=linux GOARCH=arm64 go build -o $(OUTPUT_DIR)/darkflare-server-linux-arm64 server/main.go
+	
 	# macOS AMD64 (Intel)
 	GOOS=darwin GOARCH=amd64 go build -o $(OUTPUT_DIR)/darkflare-client-darwin-amd64 client/main.go
 	GOOS=darwin GOARCH=amd64 go build -o $(OUTPUT_DIR)/darkflare-server-darwin-amd64 server/main.go
