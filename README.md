@@ -1,7 +1,7 @@
 # 🌒 DarkFlare cli (dfcli.com)
 (c) Barrett Lyon 2024
 
-A stealthy commandline tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable.
+A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable.
 
 ## 🤔 What is this sorcery?
 
