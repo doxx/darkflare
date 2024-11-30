@@ -1,4 +1,5 @@
-# 🌒 DarkFlare
+# 🌒 DarkFlare (dfvpn.com)
+(c) Barrett Lyon 2024
 
 A stealthy TCP-over-CDN tunnel that keeps your connections cozy and comfortable behind Cloudflare's welcoming embrace.
 
