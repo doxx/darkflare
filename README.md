@@ -1,7 +1,7 @@
-# 🌒 DarkFlare (dfvpn.com)
+# 🌒 DarkFlare cli (dfcli.com)
 (c) Barrett Lyon 2024
 
-A stealthy TCP-over-CDN tunnel that keeps your connections cozy and comfortable behind Cloudflare's welcoming embrace.
+A stealthy commandline tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable.
 
 ## 🤔 What is this sorcery?
 
