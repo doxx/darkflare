@@ -377,33 +377,30 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage:\n")
 		fmt.Fprintf(os.Stderr, "  %s [options]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  -l        Listen address for the server\n")
-		fmt.Fprintf(os.Stderr, "            Format: [host]:port\n")
-		fmt.Fprintf(os.Stderr, "            Default: :8080\n\n")
+		fmt.Fprintf(os.Stderr, "  -o        Listen address for the server\n")
+		fmt.Fprintf(os.Stderr, "            Format: proto://[host]:port\n")
+		fmt.Fprintf(os.Stderr, "            Default: http://0.0.0.0:8080\n\n")
 		fmt.Fprintf(os.Stderr, "  -allow-direct\n")
 		fmt.Fprintf(os.Stderr, "            Allow direct connections not coming through Cloudflare\n")
 		fmt.Fprintf(os.Stderr, "            Default: false (only allow Cloudflare IPs)\n\n")
-		fmt.Fprintf(os.Stderr, "  -metrics  Address to serve Prometheus metrics\n")
-		fmt.Fprintf(os.Stderr, "            Format: [host]:port\n")
-		fmt.Fprintf(os.Stderr, "            Default: :9090\n\n")
-		fmt.Fprintf(os.Stderr, "  -cert     Path to TLS certificate file\n")
+		fmt.Fprintf(os.Stderr, "  -c        Path to TLS certificate file\n")
 		fmt.Fprintf(os.Stderr, "            Default: Auto-generated self-signed cert\n\n")
-		fmt.Fprintf(os.Stderr, "  -key      Path to TLS private key file\n")
+		fmt.Fprintf(os.Stderr, "  -k        Path to TLS private key file\n")
 		fmt.Fprintf(os.Stderr, "            Default: Auto-generated with cert\n\n")
 		fmt.Fprintf(os.Stderr, "  -debug    Enable detailed debug logging\n")
 		fmt.Fprintf(os.Stderr, "            Shows connection details and errors\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic setup:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l :8080\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "    %s -o http://0.0.0.0:8080\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  With custom TLS certificates:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l :443 -cert /path/to/cert.pem -key /path/to/key.pem\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "    %s -o https://0.0.0.0:443 -c /path/to/cert.pem -k /path/to/key.pem\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  Debug mode with metrics:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l :8080 -metrics :9090 -debug\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "    %s -o http://0.0.0.0:8080 -debug\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Notes:\n")
 		fmt.Fprintf(os.Stderr, "  - Server accepts destination from client via X-Requested-With header\n")
 		fmt.Fprintf(os.Stderr, "  - Destination validation is performed for security\n")
 		fmt.Fprintf(os.Stderr, "  - Use with Cloudflare as reverse proxy for best security\n\n")
-		fmt.Fprintf(os.Stderr, "For more information: https://github.com/blyon/darkflare\n")
+		fmt.Fprintf(os.Stderr, "For more information: https://github.com/doxx/darkflare\n")
 	}
 
 	flag.StringVar(&origin, "o", "http://0.0.0.0:8080", "")
@@ -453,10 +450,6 @@ func main() {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
 			log.Fatalf("Failed to load certificate and key: %v", err)
-		}
-
-		if debug {
-			log.Printf("Successfully loaded certificate from %s and key from %s", certFile, keyFile)
 		}
 
 		server := &http.Server{

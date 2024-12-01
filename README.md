@@ -44,7 +44,17 @@ Flow:
 4. Unwrapped back to TCP ──> Target Service
 ```
 
-## ⁇  Usecases
+##  Open Test Relay Servers
+I've taken a moment to setup some testing darkflare-servers for you to use:
+
+Coming soon...  (not live yet)
+https://direct.miami.doxx.net:443
+https://cdn.miami.doxx.net:443 (only via Cloudflare) 
+
+You may use these to test your darkflare-client without setting up your own. If these are abused I will add authentication, so don't abuse them.
+
+
+##  Usecases
 ssh, rdp, or anything tcp to bypass restrictive firewalls or state controled internet.
 
 Tunneling ppp or other vpn services that leverage TCP.
