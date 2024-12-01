@@ -1,5 +1,4 @@
 // Copyright (c) Barrett Lyon
-// blyon@blyon.com
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +23,7 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -34,6 +34,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -199,8 +200,56 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "application/octet-stream")
 
+	// Get the encoded destination from headers
+	encodedDest := r.Header.Get("X-Requested-With")
+	if encodedDest == "" {
+		if s.debug {
+			log.Printf("[DEBUG] Missing X-Requested-With header")
+		}
+		http.Error(w, "Missing destination", http.StatusBadRequest)
+		return
+	}
+
+	// Decode the destination
+	destBytes, err := base64.StdEncoding.DecodeString(encodedDest)
+	if err != nil {
+		if s.debug {
+			log.Printf("[DEBUG] Failed to decode X-Requested-With: %v", err)
+		}
+		http.Error(w, "Invalid destination encoding", http.StatusBadRequest)
+		return
+	}
+
+	destination := string(destBytes)
+	if s.debug {
+		log.Printf("[DEBUG] Decoded destination: %s", destination)
+	}
+
+	// Validate the destination
+	if !isValidDestination(destination) {
+		if s.debug {
+			log.Printf("[DEBUG] Invalid destination format: %s", destination)
+		}
+		http.Error(w, "Invalid destination", http.StatusForbidden)
+		return
+	}
+
+	// Use the decoded destination for the connection
+	host, port, err := net.SplitHostPort(destination)
+	if err != nil {
+		if s.debug {
+			log.Printf("[DEBUG] Failed to split host:port: %v", err)
+		}
+		http.Error(w, "Invalid destination format", http.StatusBadRequest)
+		return
+	}
+
+	if s.debug {
+		log.Printf("[DEBUG] Connecting to %s:%s", host, port)
+	}
+
 	// Try to get session ID from various possible headers
-	sessionID := r.Header.Get("X-Ephemeral")
+	sessionID := r.Header.Get("X-For")
 	if sessionID == "" {
 		// Try Cloudflare-specific headers
 		sessionID = r.Header.Get("Cf-Ray")
@@ -221,7 +270,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var session *Session
 	sessionInterface, exists := s.sessions.Load(sessionID)
 	if !exists {
-		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", s.destHost, s.destPort))
+		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -270,11 +319,11 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// For GET requests, read any available data
-	buffer := make([]byte, 8192)
-	var readData []byte
+	buffer := make([]byte, 32*1024)      // 32KB buffer
+	readData := make([]byte, 0, 64*1024) // 64KB initial capacity
 
 	for {
-		session.conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+		session.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)) // Increased from 10ms to 100ms
 		n, err := session.conn.Read(buffer)
 		if err != nil {
 			if err != io.EOF && !err.(net.Error).Timeout() {
@@ -287,15 +336,9 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if n > 0 {
-			if s.debug {
-				log.Printf("GET: Read %d bytes from connection for session %s",
-					n,
-					sessionID[:8],
-				)
-			}
 			readData = append(readData, buffer[:n]...)
 		}
-		if n < len(buffer) {
+		if n < len(buffer) || len(readData) >= 64*1024 { // Added size limit check
 			break
 		}
 	}
@@ -322,7 +365,6 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var origin string
-	var dest string
 	var certFile string
 	var keyFile string
 	var debug bool
@@ -331,32 +373,40 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "DarkFlare Server - TCP-over-CDN tunnel server component\n")
-		fmt.Fprintf(os.Stderr, "(c) 2024 Barrett Lyon - blyon@blyon.com\n\n")
+		fmt.Fprintf(os.Stderr, "(c) 2024 Barrett Lyon\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n")
 		fmt.Fprintf(os.Stderr, "  %s [options]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  -o        Origin address in format: http(s)://ip:port\n")
-		fmt.Fprintf(os.Stderr, "            Example: https://0.0.0.0:443\n")
-		fmt.Fprintf(os.Stderr, "  -c        Path to certificate file (required for HTTPS)\n")
-		fmt.Fprintf(os.Stderr, "  -k        Path to private key file (required for HTTPS)\n")
-		fmt.Fprintf(os.Stderr, "  -d        Destination address in host:port format\n")
-		fmt.Fprintf(os.Stderr, "            Example: localhost:22 for SSH forwarding\n\n")
-		fmt.Fprintf(os.Stderr, "  -a        Application mode: launches a command instead of forwarding\n")
-		fmt.Fprintf(os.Stderr, "            Example: 'sshd -i' or 'pppd noauth'\n")
-		fmt.Fprintf(os.Stderr, "            Note: Cannot be used with -d flag\n\n")
-		fmt.Fprintf(os.Stderr, "  -debug    Enable debug logging\n")
-		fmt.Fprintf(os.Stderr, "  -allow-direct  Allow direct connections without Cloudflare headers\n")
-		fmt.Fprintf(os.Stderr, "            Warning: Not recommended for production use\n\n")
+		fmt.Fprintf(os.Stderr, "  -l        Listen address for the server\n")
+		fmt.Fprintf(os.Stderr, "            Format: [host]:port\n")
+		fmt.Fprintf(os.Stderr, "            Default: :8080\n\n")
+		fmt.Fprintf(os.Stderr, "  -allow-direct\n")
+		fmt.Fprintf(os.Stderr, "            Allow direct connections not coming through Cloudflare\n")
+		fmt.Fprintf(os.Stderr, "            Default: false (only allow Cloudflare IPs)\n\n")
+		fmt.Fprintf(os.Stderr, "  -metrics  Address to serve Prometheus metrics\n")
+		fmt.Fprintf(os.Stderr, "            Format: [host]:port\n")
+		fmt.Fprintf(os.Stderr, "            Default: :9090\n\n")
+		fmt.Fprintf(os.Stderr, "  -cert     Path to TLS certificate file\n")
+		fmt.Fprintf(os.Stderr, "            Default: Auto-generated self-signed cert\n\n")
+		fmt.Fprintf(os.Stderr, "  -key      Path to TLS private key file\n")
+		fmt.Fprintf(os.Stderr, "            Default: Auto-generated with cert\n\n")
+		fmt.Fprintf(os.Stderr, "  -debug    Enable detailed debug logging\n")
+		fmt.Fprintf(os.Stderr, "            Shows connection details and errors\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
-		fmt.Fprintf(os.Stderr, "  HTTPS Server:\n")
-		fmt.Fprintf(os.Stderr, "    %s -o https://0.0.0.0:443 -d localhost:22 -c /path/to/cert.pem -k /path/to/key.pem\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  HTTP Server:\n")
-		fmt.Fprintf(os.Stderr, "    %s -o http://0.0.0.0:80 -d localhost:22\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  Basic setup:\n")
+		fmt.Fprintf(os.Stderr, "    %s -l :8080\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  With custom TLS certificates:\n")
+		fmt.Fprintf(os.Stderr, "    %s -l :443 -cert /path/to/cert.pem -key /path/to/key.pem\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  Debug mode with metrics:\n")
+		fmt.Fprintf(os.Stderr, "    %s -l :8080 -metrics :9090 -debug\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Notes:\n")
+		fmt.Fprintf(os.Stderr, "  - Server accepts destination from client via X-Requested-With header\n")
+		fmt.Fprintf(os.Stderr, "  - Destination validation is performed for security\n")
+		fmt.Fprintf(os.Stderr, "  - Use with Cloudflare as reverse proxy for best security\n\n")
 		fmt.Fprintf(os.Stderr, "For more information: https://github.com/blyon/darkflare\n")
 	}
 
 	flag.StringVar(&origin, "o", "http://0.0.0.0:8080", "")
-	flag.StringVar(&dest, "d", "", "")
 	flag.StringVar(&certFile, "c", "", "")
 	flag.StringVar(&keyFile, "k", "", "")
 	flag.StringVar(&appCommand, "a", "", "")
@@ -381,21 +431,12 @@ func main() {
 		log.Fatalf("Invalid origin address: %v", err)
 	}
 
-	// Parse destination
-	var destHost, destPort string
-	if dest != "" {
-		destHost, destPort, err = net.SplitHostPort(dest)
-		if err != nil {
-			log.Fatalf("Invalid destination address: %v", err)
-		}
-	}
-
 	// Validate IP is local
 	if !isLocalIP(originHost) {
 		log.Fatal("Origin host must be a local IP address")
 	}
 
-	server := NewServer(destHost, destPort, appCommand, debug, allowDirect)
+	server := NewServer(originHost, originPort, appCommand, debug, allowDirect)
 
 	log.Printf("DarkFlare server running on %s://%s:%s", originURL.Scheme, originHost, originPort)
 	if allowDirect {
@@ -503,4 +544,18 @@ func isLocalIP(ip string) bool {
 	}
 
 	return ipAddr.IsLoopback() || ipAddr.IsPrivate()
+}
+
+func isValidDestination(dest string) bool {
+	_, portStr, err := net.SplitHostPort(dest)
+	if err != nil {
+		return false
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return false
+	}
+
+	return true
 }

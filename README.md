@@ -1,5 +1,4 @@
-# 🌒 DarkFlare cli (dfcli.com)
-(c) Barrett Lyon 2024
+# DarkFlare - TCP-over-CDN Tunnel
 
 A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable.
 
@@ -10,6 +9,7 @@ DarkFlare is a clever little tool that disguises your TCP traffic as innocent HT
 It has two parts: a client-side proxy (darkflare-client) that encodes TCP data into HTTPS requests and sends it to a Cloudflare-protected domain, and a server-side proxy (darkflare-server) that decodes the requests and forwards the data to a local service (like SSH on port 22). It’s protocol-agnostic, secure, and uses Cloudflare's encrypted infrastructure, making it stealthy and scalable for accessing internal resources or bypassing network restrictions.
 
 When using this remember the traffic over the tunnel is only as secure as the Cloudflare protection. Use your own encryption.
+
 
 ## 🧱 Why CDNs?
 Services like Cloudflare, Akamai Technologies, Fastly, and Amazon CloudFront are not only widely accessible but also integral to the global internet infrastructure. In regions with restrictive networks, alternatives such as CDNetworks in Russia, ArvanCloud in Iran, or ChinaCache in China may serve as viable proxies. These CDNs support millions of websites across critical sectors, including government and healthcare, making them indispensable. Blocking them risks significant collateral damage, which inadvertently makes them reliable pathways for bypassing restrictions.
@@ -33,13 +33,13 @@ AP NEWS
  client]──────┼───HTTPS───────>│ (looks like      │─-HTTPS-───────>│  server]
 localhost:2222│                │  normal traffic) │                │ :8080
               │                │                  │                │
-              └────────────────┼──────────────────┼────────────────┘
+              └────────────────┼──────────────────┼─��──────────────┘
                                │                  │
                                └──────────────────┘
 
 Flow:
 1. TCP traffic ──> darkflare-client
-2. Wrapped as HTTPS ──> Cloudflare CDN
+2. Wrapped as HTTPS ──> Cloudflare CDN (or any CDN)
 3. Forwarded to ──> darkflare-server
 4. Unwrapped back to TCP ──> Target Service
 ```
@@ -97,21 +97,29 @@ I used 8080 with a Cloudflare proxy via HTTP for the firs test. Less overhead.
 - **Debug Mode**: For when things go wrong and you need to know why (spoiler: it's always DNS)
 - **Session Management**: Keeps your connections organized like a Type A personality
 - **TLS Security**: Because we're sneaky, not reckless
+- **Client-controlled destination addressing**: The destination (-d) is now specified on the client side and securely transmitted to the server
+- **Base64 encoded destination transmission**: The server no longer requires a destination parameter (-d has been removed)
 
 ## 🚀 Quick Start
 
 ### Installation
 
-1. Download the latest release from the releases page or binary from the main branch.
-2. Extract the binaries to your preferred location
-3. Make the binaries executable:
+1. Download the latest release from the [GitHub Releases page](https://github.com/blyon/darkflare/releases)
+   - Choose the appropriate binary for your system:
+     - `darkflare-client-darwin-arm64` - macOS Apple Silicon
+     - `darkflare-client-darwin-amd64` - macOS Intel
+     - `darkflare-client-linux-amd64` - Linux x64
+     - `darkflare-client-windows-amd64.exe` - Windows x64
+     - `darkflare-server-*` - corresponding server binaries
+2. Verify the checksums against `checksums.txt` (recommended)
+3. Make the binaries executable (Unix systems):
 ```bash
-chmod +x darkflare-client darkflare-server
+chmod +x darkflare-client-* darkflare-server-*
 ```
 
 ### Running the Client
 ```bash
-./darkflare-client -l 2222 -t https://host.domain.net:443 
+./darkflare-client -l 2222 -t https://host.domain.net:443 -d localhost:22
 ```
 Add `-debug` flag for debug mode
 
@@ -122,10 +130,10 @@ Make the host.domain.net you use is configured in Cloudflare to point to the dar
 
 ```bash
 # HTTPS Server (recommended for production)
-./darkflare-server -o https://0.0.0.0:443 -d localhost:22 -c /path/to/cert.pem -k /path/to/key.pem
+./darkflare-server -l :443 -cert /path/to/cert.pem -key /path/to/key.pem
 
 # HTTP Server (for testing)
-./darkflare-server -o http://0.0.0.0:8080 -d localhost:22
+./darkflare-server -l :8080
 ```
 
 ### Notes
@@ -167,41 +175,6 @@ This tool is for educational purposes only. Please don't use it to bypass your c
 Found a bug? Want to add a feature? PRs are welcome! Just remember:
 - Keep it clean
 - Keep it clever
-
-
-## 📥 Downloads
-
-### Latest Binary Downloads
-
-#### Linux
-- [darkflare-client-linux-amd64](https://raw.githubusercontent.com/blyon/darkflare/main/bin/darkflare-client-linux-amd64)
-- [darkflare-server-linux-amd64](https://raw.githubusercontent.com/blyon/darkflare/main/bin/darkflare-server-linux-amd64)
-
-#### macOS
-- Intel (AMD64):
-  - [darkflare-client-darwin-amd64](https://raw.githubusercontent.com/blyon/darkflare/main/bin/darkflare-client-darwin-amd64)
-  - [darkflare-server-darwin-amd64](https://raw.githubusercontent.com/blyon/darkflare/main/bin/darkflare-server-darwin-amd64)
-- Apple Silicon (ARM64):
-  - [darkflare-client-darwin-arm64](https://raw.githubusercontent.com/blyon/darkflare/main/bin/darkflare-client-darwin-arm64)
-  - [darkflare-server-darwin-arm64](https://raw.githubusercontent.com/blyon/darkflare/main/bin/darkflare-server-darwin-arm64)
-
-#### Windows
-- [darkflare-client-windows-amd64.exe](https://raw.githubusercontent.com/blyon/darkflare/main/bin/darkflare-client-windows-amd64.exe)
-- [darkflare-server-windows-amd64.exe](https://raw.githubusercontent.com/blyon/darkflare/main/bin/darkflare-server-windows-amd64.exe)
-
-### Verifying Binaries
-```bash
-# Download the checksums file
-curl -O https://raw.githubusercontent.com/blyon/darkflare/main/bin/checksums.txt
-
-# Verify downloads on Linux/macOS
-shasum -a 256 -c checksums.txt
-
-# Verify downloads on Windows PowerShell
-Get-FileHash .\darkflare-client-windows-amd64.exe | Format-List
-```
-
-Note: All binaries are built automatically from the main branch. The checksums file is generated during the build process to ensure file integrity.
 
 ## 📜 License
 
