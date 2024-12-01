@@ -45,6 +45,7 @@ type Client struct {
 	readBufferSize  int
 	writeBufferSize int
 	pollInterval    time.Duration
+	batchSize       int
 }
 
 func generateSessionID() string {
@@ -90,10 +91,14 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 			SessionTicketsDisabled:   false,
 			InsecureSkipVerify:       false,
 		},
-		MaxIdleConns:       100,
-		IdleConnTimeout:    90 * time.Second,
-		DisableCompression: true,
-		ForceAttemptHTTP2:  true, // Enable HTTP/2 support like Chrome
+		MaxIdleConns:        100,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
+		ForceAttemptHTTP2:   true, // Enable HTTP/2 support like Chrome
+		MaxIdleConnsPerHost: 100,
+		MaxConnsPerHost:     100,
+		WriteBufferSize:     64 * 1024,
+		ReadBufferSize:      64 * 1024,
 	}
 
 	client := &Client{
@@ -109,14 +114,15 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 		debug:           debug,
 		maxBodySize:     10 * 1024 * 1024,
 		rateLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*100), 1000),
-		readBufferSize:  32 * 1024,             // 32KB read buffer (reduced from 64KB)
-		writeBufferSize: 32 * 1024,             // 32KB write buffer (reduced from 64KB)
-		pollInterval:    50 * time.Millisecond, // Back to original polling rate
+		readBufferSize:  64 * 1024,             // Increase to 64KB
+		writeBufferSize: 64 * 1024,             // Increase to 64KB
+		pollInterval:    25 * time.Millisecond, // Decrease from 50ms to 25ms
 		bufferPool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 32*1024) // 32KB buffers
+				return make([]byte, 64*1024) // Increase to 64KB
 			},
 		},
+		batchSize: 64 * 1024, // 64KB batch size
 	}
 	return client
 }
@@ -347,7 +353,7 @@ func (c *Client) handleResponse(resp *http.Response, body []byte) {
 			errorMsg += "│ Detail: Received unexpected binary response\n"
 		}
 
-		errorMsg += "╰───────────────────────────────────────────────────────────────\n"
+		errorMsg += "���───────────────────────────────────────────────────────────────\n"
 		c.debugLog(errorMsg)
 		return
 	}
