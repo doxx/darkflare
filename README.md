@@ -137,7 +137,6 @@ Make the host.domain.net you use is configured in Cloudflare to point to the dar
 ```
 
 ### Notes
-- You must specify either `-d` (network destination) or `-a` (application) mode, but not both
 - The `-allow-direct` flag allows direct connections without Cloudflare headers (not recommended for production)
 - Debug mode (`-debug`) provides verbose logging of connections and data transfers
 - Under SSL/TLS configuration in Cloudflare you need to set ssl encryption mode to Full.
