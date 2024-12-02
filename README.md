@@ -45,13 +45,13 @@ Flow:
 ```
 
 ##  Open Test Relay Servers
-I've taken a moment to setup some testing darkflare-servers for you to use:
+I've taken a moment to setup some free (as in beer) testing darkflare-servers for you to use:
 
-Coming soon...  (not live yet)
-https://direct.miami.doxx.net:443
-https://cdn.miami.doxx.net:443 (only via Cloudflare) 
+This will avoid any issues with having to setup your own darkflare-server.
 
-You may use these to test your darkflare-client without setting up your own. If these are abused I will add authentication, so don't abuse them.
+https://cdn.miami.us.doxx.net:443 (only via Cloudflare) 
+
+You may use these to test your darkflare-client without setting up your own server. If these are popular I will setup more servers around the world. 
 
 
 ##  Usecases
