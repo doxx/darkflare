@@ -172,7 +172,22 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Get and decode destination early
 	encodedDest := r.Header.Get("X-Requested-With")
 	if encodedDest == "" {
-		http.Error(w, "Missing destination", http.StatusBadRequest)
+		log.Printf("Redirect: %s → https://github.com/doxx/darkflare", clientIP)
+		http.Redirect(w, r, "https://github.com/doxx/darkflare", http.StatusFound)
+		return
+	}
+
+	// Check for connection termination
+	if r.Header.Get("X-Connection-Close") == "true" {
+		sessionDisplay := "no-session"
+		if sessionID != "" {
+			sessionDisplay = sessionID[:8]
+		}
+		log.Printf("Disconnect: %s [%s]", clientIP, sessionDisplay)
+		if sessionInterface, exists := s.sessions.LoadAndDelete(sessionID); exists {
+			session := sessionInterface.(*Session)
+			session.conn.Close()
+		}
 		return
 	}
 

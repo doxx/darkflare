@@ -5,6 +5,7 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"flag"
@@ -71,11 +72,21 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 	cloudflareHost = strings.TrimPrefix(cloudflareHost, "http://")
 	cloudflareHost = strings.TrimPrefix(cloudflareHost, "https://")
 
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil {
+		log.Printf("Warning: failed to load system cert pool: %v", err)
+		rootCAs = x509.NewCertPool()
+		if rootCAs == nil {
+			log.Fatal("Failed to create cert pool")
+		}
+	}
+
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
+			RootCAs:    rootCAs,
 			MinVersion: tls.VersionTLS12,
 			CurvePreferences: []tls.CurveID{
-				tls.X25519, // Chrome prioritizes X25519
+				tls.X25519,
 				tls.CurveP256,
 				tls.CurveP384,
 			},
@@ -94,7 +105,7 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 		MaxIdleConns:        100,
 		IdleConnTimeout:     90 * time.Second,
 		DisableCompression:  true,
-		ForceAttemptHTTP2:   true, // Enable HTTP/2 support like Chrome
+		ForceAttemptHTTP2:   true,
 		MaxIdleConnsPerHost: 100,
 		MaxConnsPerHost:     100,
 		WriteBufferSize:     64 * 1024,
@@ -353,7 +364,7 @@ func (c *Client) handleResponse(resp *http.Response, body []byte) {
 			errorMsg += "│ Detail: Received unexpected binary response\n"
 		}
 
-		errorMsg += "���───────────────────────────────────────────────────────────────\n"
+		errorMsg += "───────────────────────────────────────────────────────────────\n"
 		c.debugLog(errorMsg)
 		return
 	}
