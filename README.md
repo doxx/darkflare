@@ -53,6 +53,17 @@ This will avoid any issues with having to setup your own darkflare-server.
 
 https://cdn.miami.us.doxx.net:443 (only via Cloudflare) 
 
+Example: 
+```
+./darkflare-client -l 2222 -t https://cdn.miami.us.doxx.net:443 -d ssh.myhost.com:22
+
+$ ssh user@localhost -p 2222
+
+Or with OpenVPN:
+```
+./darkflare-client -l 2222 -t https://cdn.miami.us.doxx.net:443 -d ip-address-of-openvpn-server:443 
+```
+
 You may use these to test your darkflare-client without setting up your own server. If these are popular I will setup more servers around the world. 
 
 
