@@ -102,6 +102,15 @@ I did provide an ./examples/nordvpn.ovpn for you to use. Also two scrips for up/
 
 Speed tests were around 30Mbps down and 10Mbps up with latency around 30-100ms. Streaming, etc... all seem to work fine.
 
+Make sure you view the .ovpn file and change the port and ip to match your darkflare-client and make sure your darkflare-server is setup to match the destination ip and port in the .ovpn file.
+
+The example scripts OpenVPN-up.sh and OpenVPN-down.sh are to set the routes to use OpenVPN's default gateway provided by the VPN or to restore the original default gateway.
+
+Use the following to test your IP:
+```
+while true; do curl -s ipinfo.io/ip; echo " $(date)"; sleep 5; done
+```
+
 Note: OpenVPN does some weird thing with the default gateway/route. For testing purposes I added: pull-filter ignore "redirect-gateway" to the .ovpn file. That allows me to force the tunnel to not eat my network. 
 
 ![OpenVPN on NordVPN over TCPoCDN](https://raw.githubusercontent.com/doxx/darkflare/main/images/openvpn.jpg)
