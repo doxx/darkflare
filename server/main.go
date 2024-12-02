@@ -225,6 +225,57 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[DEBUG] Decoded destination: %s", destination)
 	}
 
+	// Validate the destination format and DNS resolution
+	host, port, err := net.SplitHostPort(destination)
+	if err != nil {
+		if s.debug {
+			log.Printf("[DEBUG] Invalid destination format %s: %v", destination, err)
+		}
+		http.Error(w, fmt.Sprintf("Invalid destination format: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Additional host validation
+	if host == "" {
+		if s.debug {
+			log.Printf("[DEBUG] Empty host in destination: %s", destination)
+		}
+		http.Error(w, "Empty host not allowed", http.StatusBadRequest)
+		return
+	}
+
+	// Validate port
+	portNum, err := strconv.Atoi(port)
+	if err != nil || portNum < 1 || portNum > 65535 {
+		if s.debug {
+			log.Printf("[DEBUG] Invalid port %s in destination: %v", port, err)
+		}
+		http.Error(w, fmt.Sprintf("Invalid port number: %s", port), http.StatusBadRequest)
+		return
+	}
+
+	// DNS resolution check
+	if ip := net.ParseIP(host); ip == nil {
+		ips, err := net.LookupHost(host)
+		if err != nil {
+			if s.debug {
+				log.Printf("[DEBUG] DNS resolution failed for %s: %v", host, err)
+			}
+			http.Error(w, fmt.Sprintf("DNS resolution failed: %v", err), http.StatusBadRequest)
+			return
+		}
+		if len(ips) == 0 {
+			if s.debug {
+				log.Printf("[DEBUG] No IP addresses found for host: %s", host)
+			}
+			http.Error(w, "No IP addresses found for host", http.StatusBadRequest)
+			return
+		}
+		if s.debug {
+			log.Printf("[DEBUG] Resolved %s to %v", host, ips)
+		}
+	}
+
 	// Validate the destination
 	if !isValidDestination(destination) {
 		if s.debug {
@@ -235,15 +286,6 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Use the decoded destination for the connection
-	host, port, err := net.SplitHostPort(destination)
-	if err != nil {
-		if s.debug {
-			log.Printf("[DEBUG] Failed to split host:port: %v", err)
-		}
-		http.Error(w, "Invalid destination format", http.StatusBadRequest)
-		return
-	}
-
 	if s.debug {
 		log.Printf("[DEBUG] Connecting to %s:%s", host, port)
 	}
@@ -540,15 +582,28 @@ func isLocalIP(ip string) bool {
 }
 
 func isValidDestination(dest string) bool {
-	_, portStr, err := net.SplitHostPort(dest)
+	host, portStr, err := net.SplitHostPort(dest)
 	if err != nil {
 		return false
 	}
 
+	// Validate port
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
 		return false
 	}
 
-	return true
+	// Validate host
+	if host == "" {
+		return false
+	}
+
+	// Check if it's an IP address
+	if ip := net.ParseIP(host); ip != nil {
+		return true
+	}
+
+	// Try DNS resolution
+	ips, err := net.LookupHost(host)
+	return err == nil && len(ips) > 0
 }

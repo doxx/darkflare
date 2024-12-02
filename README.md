@@ -2,6 +2,8 @@
 
 A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable.
 
+Join the Discord for support and discussion: https://discord.gg/7wVKeP88 
+
 ## 🤔 What is this sorcery?
 
 DarkFlare is a clever little tool that disguises your TCP traffic as innocent HTTPS requests, letting them pass through corporate firewalls like a VIP at a nightclub. It's like a tunnel, but with more style and less dirt.
@@ -192,3 +194,4 @@ MIT License - Because sharing is caring, but attribution is nice.
 ---
 *Built with ❤️ and a healthy dose of mischief*
 
+Join the Discord for support and discussion: https://discord.gg/7wVKeP88 
