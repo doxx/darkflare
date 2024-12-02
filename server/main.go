@@ -1,23 +1,3 @@
-// Copyright (c) Barrett Lyon
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 package main
 
 import (
@@ -171,13 +151,49 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Add basic connection logging
+	clientIP := r.Header.Get("X-Forwarded-For")
+	if clientIP == "" {
+		clientIP = r.Header.Get("Cf-Connecting-Ip")
+	}
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+	}
+
+	// Get session ID early
+	sessionID := r.Header.Get("X-For")
+	if sessionID == "" {
+		sessionID = r.Header.Get("Cf-Ray")
+		if sessionID == "" {
+			sessionID = r.Header.Get("Cf-Connecting-Ip")
+		}
+	}
+
+	// Get and decode destination early
+	encodedDest := r.Header.Get("X-Requested-With")
+	if encodedDest == "" {
+		http.Error(w, "Missing destination", http.StatusBadRequest)
+		return
+	}
+
+	destBytes, err := base64.StdEncoding.DecodeString(encodedDest)
+	if err != nil {
+		http.Error(w, "Invalid destination encoding", http.StatusBadRequest)
+		return
+	}
+	destination := string(destBytes)
+
+	// Always log basic connection info
+	sessionDisplay := "no-session"
+	if sessionID != "" {
+		sessionDisplay = sessionID[:8] // First 8 chars of session ID
+	}
+	log.Printf("Connection: %s [%s] → %s", clientIP, sessionDisplay, destination)
+
+	// Debug logging only when enabled
 	if s.debug {
-		log.Printf("Request: %s %s from %s",
-			r.Method,
-			r.URL.Path,
-			r.Header.Get("Cf-Connecting-Ip"),
-		)
 		log.Printf("Headers: %+v", r.Header)
+		// ... rest of debug logging ...
 	}
 
 	// Verify Cloudflare connection
@@ -199,31 +215,6 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "application/octet-stream")
-
-	// Get the encoded destination from headers
-	encodedDest := r.Header.Get("X-Requested-With")
-	if encodedDest == "" {
-		if s.debug {
-			log.Printf("[DEBUG] Missing X-Requested-With header")
-		}
-		http.Error(w, "Missing destination", http.StatusBadRequest)
-		return
-	}
-
-	// Decode the destination
-	destBytes, err := base64.StdEncoding.DecodeString(encodedDest)
-	if err != nil {
-		if s.debug {
-			log.Printf("[DEBUG] Failed to decode X-Requested-With: %v", err)
-		}
-		http.Error(w, "Invalid destination encoding", http.StatusBadRequest)
-		return
-	}
-
-	destination := string(destBytes)
-	if s.debug {
-		log.Printf("[DEBUG] Decoded destination: %s", destination)
-	}
 
 	// Validate the destination format and DNS resolution
 	host, port, err := net.SplitHostPort(destination)
@@ -291,7 +282,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to get session ID from various possible headers
-	sessionID := r.Header.Get("X-For")
+	sessionID = r.Header.Get("X-For")
 	if sessionID == "" {
 		// Try Cloudflare-specific headers
 		sessionID = r.Header.Get("Cf-Ray")
@@ -569,16 +560,40 @@ func main() {
 }
 
 func isLocalIP(ip string) bool {
-	if ip == "0.0.0.0" || ip == "127.0.0.1" || ip == "::1" {
-		return true
-	}
-
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
 		return false
 	}
 
-	return ipAddr.IsLoopback() || ipAddr.IsPrivate()
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		log.Printf("Error getting network interfaces: %v", err)
+		return false
+	}
+
+	for _, iface := range interfaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			log.Printf("Error getting addresses for interface %s: %v", iface.Name, err)
+			continue
+		}
+
+		for _, addr := range addrs {
+			var localIP net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				localIP = v.IP
+			case *net.IPAddr:
+				localIP = v.IP
+			}
+
+			if localIP.Equal(ipAddr) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func isValidDestination(dest string) bool {
