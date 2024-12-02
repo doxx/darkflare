@@ -136,7 +136,7 @@ I used 8080 with a Cloudflare proxy via HTTP for the firs test. Less overhead.
 
 ### Installation
 
-1. Download the latest release from the [GitHub Releases page](https://github.com/blyon/darkflare/releases)
+1. Download the latest release from the [GitHub Releases page](https://github.com/doxx/darkflare/releases)
    - Choose the appropriate binary for your system:
      - `darkflare-client-darwin-arm64` - macOS Apple Silicon
      - `darkflare-client-darwin-amd64` - macOS Intel
