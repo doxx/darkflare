@@ -60,7 +60,7 @@ Example:
 $ ssh user@localhost -p 2222
 
 Or with OpenVPN:
-```
+
 ./darkflare-client -l 2222 -t https://cdn.miami.us.doxx.net:443 -d ip-address-of-openvpn-server:443 
 ```
 
