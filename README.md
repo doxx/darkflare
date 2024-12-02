@@ -1,6 +1,6 @@
 # DarkFlare - TCP-over-CDN Tunnel
 
-A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable.
+A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable. Now includes an open test relay server. 
 
 Join the Discord for support and discussion: https://discord.gg/7wVKeP88 
 
