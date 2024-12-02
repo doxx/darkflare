@@ -53,7 +53,9 @@ I've taken a moment to setup some free (as in beer) testing darkflare-servers fo
 
 This will avoid any issues with having to setup your own darkflare-server.
 
+### US - East
 https://cdn.miami.us.doxx.net:443 (only via Cloudflare) 
+
 https://direct.miami.us.doxx.net:443 (Direct Access no CDN)
 
 Example: 
