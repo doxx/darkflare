@@ -1,7 +1,7 @@
 # DarkFlare Binary Checksums
-# Generated: Mon Dec  2 18:29:34 UTC 2024
+# Generated: Mon Dec  2 18:35:56 UTC 2024
 
-c4b8bbe7004ef9038e9214f5721487537190d2870199eb1e3b2a80fac0710699  checksums.txt
+5d3c309c733511114e1387f693b68def0e2cbce1e6cd53a711a5b8d677d76443  checksums.txt
 d44d8c23c9c73c6a013daf43a08d904ad3cf454403874e9932bacf00815d0d8f  darkflare-client-darwin-amd64
 777841f3def9835a533a2fc43755c0b6b092bf988a99a270bb005c5e9b895cb4  darkflare-client-darwin-arm64
 2eb95b50e76b63b03ab688b7613d447531a6cfa8cac4aac27446a7dd54b8bb69  darkflare-client-linux-amd64

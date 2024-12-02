@@ -54,10 +54,15 @@ I've taken a moment to setup some free (as in beer) testing darkflare-servers fo
 This will avoid any issues with having to setup your own darkflare-server.
 
 https://cdn.miami.us.doxx.net:443 (only via Cloudflare) 
+https://direct.miami.us.doxx.net:443 (Direct Access no CDN)
 
 Example: 
 ```
 ./darkflare-client -l 2222 -t https://cdn.miami.us.doxx.net:443 -d ssh.myhost.com:22
+
+or without the CDN via HTTPs:
+
+./darkflare-client -l 2222 -t https://direct.miami.us.doxx.net:443 -d ssh.myhost.com:22
 
 $ ssh user@localhost -p 2222
 

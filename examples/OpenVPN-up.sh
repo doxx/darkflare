@@ -37,7 +37,7 @@ echo "VPN tunnel gateway: $vpn_gateway"
 cdn_gateway="$current_default_gateway"
 
 # Additional known Cloudflare IPs not in the official list
-additional_cloudflare_ips="172.67.0.0/16 104.21.0.0/16 38.91.106.118/32"
+additional_cloudflare_ips="172.67.0.0/16 104.21.0.0/16 38.91.106.118/32 38.91.107.85/32 38.91.107.248/32"
 
 # Add routes for Cloudflare IP ranges through the CDN gateway
 echo "Adding routes for Cloudflare IP ranges via CDN gateway ($cdn_gateway)..."
