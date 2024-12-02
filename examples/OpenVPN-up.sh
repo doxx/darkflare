@@ -4,7 +4,7 @@
 set -e
 
 # File to save the original default route
-default_route_file="default-router.txt"
+default_route_file="/tmp/openvpn-default-router.txt"
 
 # Fetch the latest Cloudflare IP ranges
 cloudflare_ipv4=$(curl -s https://www.cloudflare.com/ips-v4)
