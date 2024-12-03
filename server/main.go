@@ -1,23 +1,3 @@
-// Copyright (c) Barrett Lyon
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 package main
 
 import (
@@ -200,6 +180,13 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if the request is using TLS
+	if r.TLS == nil {
+		log.Printf("[%s] Non-TLS connection attempt from %s", time.Now().Format(time.RFC3339), clientIP)
+		http.Error(w, "TLS required", http.StatusUpgradeRequired)
+		return
+	}
+
 	// Set Apache-like headers
 	w.Header().Set("Server", "Apache/2.4.41 (Ubuntu)")
 	w.Header().Set("X-Powered-By", "PHP/7.4.33")
@@ -217,9 +204,9 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	encodedDest := r.Header.Get("X-Requested-With")
 	if encodedDest == "" {
 		if s.debug {
-			log.Printf("[DEBUG] Missing X-Requested-With header")
+			log.Printf("[DEBUG] Missing X-Requested-With header, redirecting to project page")
 		}
-		http.Error(w, "Missing destination", http.StatusBadRequest)
+		http.Redirect(w, r, "https://github.com/doxx/darkflare", http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -280,12 +267,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userAgent := r.Header.Get("User-Agent")
+	xForwardedFor := r.Header.Get("X-Forwarded-For")
+
 	var session *Session
 	sessionInterface, exists := s.sessions.Load(sessionID)
 	if !exists {
-		if s.debug {
-			log.Printf("[DEBUG] No existing session found for %s, creating new session", sessionID[:8])
-		}
 		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -297,28 +284,22 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			buffer:     make([]byte, 0),
 		}
 		s.sessions.Store(sessionID, session)
-		if s.debug {
-			log.Printf("[DEBUG] New session created and stored for %s", sessionID[:8])
-		}
+		log.Printf("[%s] Session created: SessionID=%s, Destination=%s, X-Forwarded-For=%s, User-Agent=%s",
+			time.Now().Format(time.RFC3339),
+			sessionID[:8],
+			destination,
+			xForwardedFor,
+			userAgent,
+		)
 	} else {
 		session = sessionInterface.(*Session)
 		if session.conn == nil {
-			if s.debug {
-				log.Printf("[DEBUG] Session %s found but connection is nil, reconnecting", sessionID[:8])
-			}
 			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			session.conn = conn
-			if s.debug {
-				log.Printf("[DEBUG] Reconnected session %s", sessionID[:8])
-			}
-		} else {
-			if s.debug {
-				log.Printf("[DEBUG] Reusing existing connection for session %s", sessionID[:8])
-			}
 		}
 	}
 
@@ -327,12 +308,16 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	session.lastActive = time.Now()
 
 	if r.Header.Get("X-Connection-Close") == "true" {
-		if s.debug {
-			log.Printf("[DEBUG] Closing connection for session %s", sessionID[:8])
-		}
 		session.conn.Close()
 		session.conn = nil
 		s.sessions.Delete(sessionID)
+		log.Printf("[%s] Session closed: SessionID=%s, Destination=%s, X-Forwarded-For=%s, User-Agent=%s",
+			time.Now().Format(time.RFC3339),
+			sessionID[:8],
+			destination,
+			xForwardedFor,
+			userAgent,
+		)
 		return
 	}
 
