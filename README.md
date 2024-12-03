@@ -50,7 +50,7 @@ I've taken a moment to setup some testing darkflare-servers for you to use:
 
 ### US East Miami
 
-https://direct.miami.ux.doxx.net:443
+https://direct.miami.us.doxx.net:443
 
 https://cdn.miami.us.doxx.net:443 
 
