@@ -1,6 +1,8 @@
 # DarkFlare - TCP-over-CDN Tunnel
 
-A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable.
+A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable. Now with public test relay servers!
+
+Join the Discord server for support and discussion: https://discord.gg/7wVKeP88
 
 ## 🤔 What is this sorcery?
 
@@ -47,8 +49,11 @@ Flow:
 ##  Open Test Relay Servers
 I've taken a moment to setup some testing darkflare-servers for you to use:
 
-Coming soon...  (not live yet)
+### US East Miami
+
+-allow-direct mode (no CDN involved)
 https://direct.miami.doxx.net:443
+
 https://cdn.miami.doxx.net:443 (only via Cloudflare) 
 
 You may use these to test your darkflare-client without setting up your own. If these are abused I will add authentication, so don't abuse them.
@@ -129,12 +134,20 @@ chmod +x darkflare-client-* darkflare-server-*
 
 ### Running the Client
 ```bash
-./darkflare-client -l 2222 -t https://host.domain.net:443 -d localhost:22
+./darkflare-client -l 2222 -t https://cdn.miami.doxx.net:443 -d <my ssh server>:22
 ```
+
+Or with direct mode:
+```bash
+./darkflare-client -l 2222 -t https://direct.miami.doxx.net:443 -d <my ssh server>:22
+```
+
 Add `-debug` flag for debug mode
 
 ### Notes
-Make the host.domain.net you use is configured in Cloudflare to point to the darkflare-server. If you want to debug and go directly to the psudo server you can use the `-allow-direct` flag on the server.
+If you want to debug and go directly to the psudo server you can use the `-allow-direct` flag on the server.
+
+You can replace the doxx.net server with your own and setup your own server:
 
 ### Running the Server
 
@@ -192,3 +205,4 @@ MIT License - Because sharing is caring, but attribution is nice.
 ---
 *Built with ❤️ and a healthy dose of mischief*
 
+Join the Discord server for support and discussion: https://discord.gg/7wVKeP88
