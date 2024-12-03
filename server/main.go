@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,6 +26,10 @@ type Session struct {
 	lastActive time.Time
 	buffer     []byte
 	mu         sync.Mutex
+	bytesUp    int64
+	bytesDown  int64
+	startTime  time.Time
+	sourceIP   string
 }
 
 type Server struct {
@@ -282,15 +287,20 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			conn:       conn,
 			lastActive: time.Now(),
 			buffer:     make([]byte, 0),
+			startTime:  time.Now(),
+			sourceIP:   clientIP,
 		}
 		s.sessions.Store(sessionID, session)
-		log.Printf("[%s] Session created: SessionID=%s, Destination=%s, X-Forwarded-For=%s, User-Agent=%s",
+		log.Printf("[%s] New session: ID=%s, Source=%s, Dest=%s, XFF=%s, UA=%s",
 			time.Now().Format(time.RFC3339),
 			sessionID[:8],
+			clientIP,
 			destination,
 			xForwardedFor,
 			userAgent,
 		)
+		// Start statistics goroutine for this session
+		go s.trackSessionStats(sessionID, session)
 	} else {
 		session = sessionInterface.(*Session)
 		if session.conn == nil {
@@ -311,12 +321,26 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		session.conn.Close()
 		session.conn = nil
 		s.sessions.Delete(sessionID)
-		log.Printf("[%s] Session closed: SessionID=%s, Destination=%s, X-Forwarded-For=%s, User-Agent=%s",
+
+		// Calculate final statistics
+		duration := time.Since(session.startTime).Seconds()
+		upBytes := atomic.LoadInt64(&session.bytesUp)
+		downBytes := atomic.LoadInt64(&session.bytesDown)
+		upKbps := float64(upBytes*8) / (1024 * duration)
+		downKbps := float64(downBytes*8) / (1024 * duration)
+
+		log.Printf("[%s] Session closed: ID=%s, Source=%s, Dest=%s, XFF=%s, UA=%s, Duration=%.1fs, Up=%d bytes (%.2f kbps), Down=%d bytes (%.2f kbps)",
 			time.Now().Format(time.RFC3339),
 			sessionID[:8],
+			session.sourceIP,
 			destination,
 			xForwardedFor,
 			userAgent,
+			duration,
+			upBytes,
+			upKbps,
+			downBytes,
+			downKbps,
 		)
 		return
 	}
@@ -345,6 +369,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			atomic.AddInt64(&session.bytesUp, int64(len(data)))
 		}
 		return
 	}
@@ -386,11 +411,45 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 		w.Write([]byte(encoded))
+		atomic.AddInt64(&session.bytesDown, int64(len(readData)))
 	} else if s.debug {
 		log.Printf("Response: No data to send for session %s path %s",
 			sessionID[:8],
 			r.URL.Path,
 		)
+	}
+}
+
+func (s *Server) trackSessionStats(sessionID string, session *Session) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// Check if session still exists
+			if _, exists := s.sessions.Load(sessionID); !exists {
+				return
+			}
+
+			upBytes := atomic.LoadInt64(&session.bytesUp)
+			downBytes := atomic.LoadInt64(&session.bytesDown)
+			duration := time.Since(session.startTime).Seconds()
+
+			// Calculate rates
+			upKbps := float64(upBytes*8) / (1024 * duration)
+			downKbps := float64(downBytes*8) / (1024 * duration)
+
+			log.Printf("[%s] Stats: ID=%s, Source=%s, Up=%d bytes (%.2f kbps), Down=%d bytes (%.2f kbps)",
+				time.Now().Format(time.RFC3339),
+				sessionID[:8],
+				session.sourceIP,
+				upBytes,
+				upKbps,
+				downBytes,
+				downKbps,
+			)
+		}
 	}
 }
 
