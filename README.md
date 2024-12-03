@@ -50,9 +50,9 @@ I've taken a moment to setup some testing darkflare-servers for you to use:
 
 ### US East Miami
 
-https://direct.miami.doxx.net:443
+https://direct.miami.ux.doxx.net:443
 
-https://cdn.miami.doxx.net:443 (only via Cloudflare) 
+https://cdn.miami.us.doxx.net:443 
 
 You may use these to test your darkflare-client without setting up your own. If these are abused I will add authentication, so don't abuse them.
 
