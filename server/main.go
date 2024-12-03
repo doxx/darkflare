@@ -68,8 +68,11 @@ func NewServer(destHost, destPort string, appCommand string, debug bool, allowDi
 		allowDirect: allowDirect,
 	}
 
-	if s.isAppMode && s.debug {
-		log.Printf("Starting in application mode with command: %s", appCommand)
+	if s.debug {
+		log.Printf("Server configuration:")
+		log.Printf("  Allow Direct: %v", allowDirect)
+		log.Printf("  Debug Mode: %v", debug)
+		log.Printf("  App Mode: %v", s.isAppMode)
 	}
 
 	go s.cleanupSessions()
@@ -167,23 +170,32 @@ func (s *Server) handleApplication(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
-	if s.isAppMode {
-		s.handleApplication(w, r)
-		return
+	// Get client IP from various possible sources
+	clientIP := r.Header.Get("Cf-Connecting-Ip")
+	if clientIP == "" {
+		// Try X-Real-IP
+		clientIP = r.Header.Get("X-Real-IP")
+		if clientIP == "" {
+			// Try X-Forwarded-For
+			clientIP = r.Header.Get("X-Forwarded-For")
+			if clientIP == "" {
+				// Finally, use RemoteAddr
+				clientIP, _, _ = net.SplitHostPort(r.RemoteAddr)
+			}
+		}
 	}
 
 	if s.debug {
 		log.Printf("Request: %s %s from %s",
 			r.Method,
 			r.URL.Path,
-			r.Header.Get("Cf-Connecting-Ip"),
+			clientIP,
 		)
 		log.Printf("Headers: %+v", r.Header)
 	}
 
 	// Verify Cloudflare connection
-	cfConnecting := r.Header.Get("Cf-Connecting-Ip")
-	if cfConnecting == "" && !s.allowDirect {
+	if clientIP == "" && !s.allowDirect {
 		http.Error(w, "Direct access not allowed", http.StatusForbidden)
 		return
 	}
@@ -496,6 +508,8 @@ func main() {
 				Certificates: []tls.Certificate{cert},
 				MinVersion:   tls.VersionTLS12,
 				MaxVersion:   tls.VersionTLS13,
+				// Disable HTTP/2
+				NextProtos: []string{"http/1.1"},
 				// Enable session tickets for session resumption
 				SessionTicketsDisabled: false,
 				// Use client session cache
@@ -503,7 +517,12 @@ func main() {
 				// Prefer server cipher suites
 				PreferServerCipherSuites: true,
 				// Let server choose cipher suites
-				ClientAuth: tls.NoClientCert,
+				ClientAuth: func() tls.ClientAuthType {
+					if server.allowDirect {
+						return tls.NoClientCert
+					}
+					return tls.RequestClientCert
+				}(),
 				// Handle SNI
 				GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
 					if debug {
@@ -534,8 +553,6 @@ func main() {
 					}
 					return nil
 				},
-				// Enable HTTP/2 support
-				NextProtos: []string{"h2", "http/1.1"},
 			},
 			ErrorLog: log.New(os.Stderr, "[HTTPS] ", log.LstdFlags),
 			ConnState: func(conn net.Conn, state http.ConnState) {
@@ -580,6 +597,32 @@ func isLocalIP(ip string) bool {
 		return false
 	}
 
+	// Check if IP is assigned to any local interface
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+
+	for _, iface := range interfaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			switch v := addr.(type) {
+			case *net.IPNet:
+				if v.IP.String() == ip {
+					return true
+				}
+			case *net.IPAddr:
+				if v.IP.String() == ip {
+					return true
+				}
+			}
+		}
+	}
+
+	// Also allow loopback and private IPs
 	return ipAddr.IsLoopback() || ipAddr.IsPrivate()
 }
 

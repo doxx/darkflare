@@ -134,7 +134,7 @@ func (c *Client) debugLog(format string, v ...interface{}) {
 	}
 }
 
-func (c *Client) createDebugRequest(method, baseURL string, body io.Reader) (*http.Request, error) {
+func (c *Client) createDebugRequest(method, baseURL string, body io.Reader, closeConnection bool) (*http.Request, error) {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	baseURL = strings.TrimPrefix(baseURL, "http://")
 	baseURL = strings.TrimPrefix(baseURL, "https://")
@@ -183,6 +183,11 @@ func (c *Client) createDebugRequest(method, baseURL string, body io.Reader) (*ht
 	// Add the encoded destination to headers
 	req.Header.Set("X-Requested-With", encodedDest)
 	req.Header.Set("X-For", c.sessionID)
+
+	// Conditionally add the X-Connection-Close header
+	if closeConnection {
+		req.Header.Set("X-Connection-Close", "true")
+	}
 
 	// Debug logging for headers
 	if c.debug {
@@ -266,7 +271,7 @@ func (c *Client) handleConnection(conn net.Conn) {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buffer[:n])
-			if err := c.sendData(ctx, sessionID, data); err != nil {
+			if err := c.sendData(ctx, sessionID, data, false); err != nil {
 				c.debugLog("Send error for connection %s: %v", sessionID, err)
 				safeClose()
 				break
@@ -275,7 +280,7 @@ func (c *Client) handleConnection(conn net.Conn) {
 	}
 
 	// Send connection termination notification
-	req, err := c.createDebugRequest(http.MethodPost, c.cloudflareHost, nil)
+	req, err := c.createDebugRequest(http.MethodPost, c.cloudflareHost, nil, true)
 	if err == nil {
 		req = req.WithContext(context.Background())
 		req.Header.Set("X-For", sessionID)
@@ -287,8 +292,12 @@ func (c *Client) handleConnection(conn net.Conn) {
 	}
 }
 
-func (c *Client) sendData(ctx context.Context, sessionID string, data []byte) error {
-	req, err := c.createDebugRequest(http.MethodPost, c.cloudflareHost, bytes.NewReader(data))
+func (c *Client) sendData(ctx context.Context, sessionID string, data []byte, closeConnection bool) error {
+	if c.debug {
+		c.debugLog("Sending data for session %s: %d bytes, closeConnection: %v", sessionID[:8], len(data), closeConnection)
+	}
+
+	req, err := c.createDebugRequest(http.MethodPost, c.cloudflareHost, bytes.NewReader(data), closeConnection)
 	if err != nil {
 		return err
 	}
@@ -301,6 +310,10 @@ func (c *Client) sendData(ctx context.Context, sessionID string, data []byte) er
 		return err
 	}
 	defer resp.Body.Close()
+
+	if c.debug {
+		c.debugLog("Received response for session %s: %d", sessionID[:8], resp.StatusCode)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
@@ -352,7 +365,7 @@ func (c *Client) handleResponse(resp *http.Response, body []byte) {
 			errorMsg += "│ Detail: Received unexpected binary response\n"
 		}
 
-		errorMsg += "───────────────────���───────────────────────────────────────────\n"
+		errorMsg += "──────────────────────────────────────────────────────────────\n"
 		c.debugLog(errorMsg)
 		return
 	}
@@ -360,7 +373,7 @@ func (c *Client) handleResponse(resp *http.Response, body []byte) {
 }
 
 func (c *Client) pollData(ctx context.Context, sessionID string, conn net.Conn) error {
-	req, err := c.createDebugRequest(http.MethodGet, c.cloudflareHost, nil)
+	req, err := c.createDebugRequest(http.MethodGet, c.cloudflareHost, nil, false)
 	if err != nil {
 		return err
 	}
