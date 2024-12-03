@@ -117,7 +117,7 @@ I used 8080 with a Cloudflare proxy via HTTP for the firs test. Less overhead.
 
 ### Installation
 
-1. Download the latest release from the [GitHub Releases page](https://github.com/blyon/darkflare/releases)
+1. Download the latest release from the [GitHub Releases page](https://github.com/doxx/darkflare/releases)
    - Choose the appropriate binary for your system:
      - `darkflare-client-darwin-arm64` - macOS Apple Silicon
      - `darkflare-client-darwin-amd64` - macOS Intel
@@ -132,12 +132,12 @@ chmod +x darkflare-client-* darkflare-server-*
 
 ### Running the Client
 ```bash
-./darkflare-client -l 2222 -t https://cdn.miami.doxx.net:443 -d <my ssh server>:22
+./darkflare-client -l 2222 -t https://cdn.miami.us.doxx.net:443 -d <my ssh server>:22
 ```
 
 Or with direct mode:
 ```bash
-./darkflare-client -l 2222 -t https://direct.miami.doxx.net:443 -d <my ssh server>:22
+./darkflare-client -l 2222 -t https://direct.miami.us.doxx.net:443 -d <my ssh server>:22
 ```
 
 Add `-debug` flag for debug mode

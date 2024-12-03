@@ -456,7 +456,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "            Shows connection details, data transfer, and errors\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic SSH tunnel:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t https://cdn.miami.doxx.net -d ssh.destination.com:22\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t https://cdn.miami.us.doxx.net -d ssh.destination.com:22\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  Custom port with debugging:\n")
 		fmt.Fprintf(os.Stderr, "    %s -l 8080 -t https://tunnel.example.com:8443 -d internal.service:80 -debug\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  HTTP proxy tunnel:\n")
