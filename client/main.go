@@ -71,46 +71,12 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 	cloudflareHost = strings.TrimPrefix(cloudflareHost, "http://")
 	cloudflareHost = strings.TrimPrefix(cloudflareHost, "https://")
 
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			CurvePreferences: []tls.CurveID{
-				tls.X25519, // Chrome prioritizes X25519
-				tls.CurveP256,
-				tls.CurveP384,
-			},
-			CipherSuites: []uint16{
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-			},
-			PreferServerCipherSuites: false,
-			SessionTicketsDisabled:   false,
-			InsecureSkipVerify:       false,
-		},
-		MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true,
-		ForceAttemptHTTP2:   true, // Enable HTTP/2 support like Chrome
-		MaxIdleConnsPerHost: 100,
-		MaxConnsPerHost:     100,
-		WriteBufferSize:     64 * 1024,
-		ReadBufferSize:      64 * 1024,
-	}
-
 	client := &Client{
-		cloudflareHost: cloudflareHost,
-		destPort:       destPort,
-		destAddr:       destAddr,
-		scheme:         scheme,
-		sessionID:      generateSessionID(),
-		httpClient: &http.Client{
-			Transport: transport,
-			Timeout:   30 * time.Second,
-		},
+		cloudflareHost:  cloudflareHost,
+		destPort:        destPort,
+		destAddr:        destAddr,
+		scheme:          scheme,
+		sessionID:       generateSessionID(),
 		debug:           debug,
 		maxBodySize:     10 * 1024 * 1024,
 		rateLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*100), 1000),
@@ -124,6 +90,41 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 		},
 		batchSize: 64 * 1024, // 64KB batch size
 	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			MaxVersion: tls.VersionTLS13,
+			CurvePreferences: []tls.CurveID{
+				tls.X25519,
+				tls.CurveP256,
+			},
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			},
+			PreferServerCipherSuites: true,
+			SessionTicketsDisabled:   false,
+			InsecureSkipVerify:       false,
+			Renegotiation:            tls.RenegotiateNever,
+		},
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		DisableCompression:    true,
+		ForceAttemptHTTP2:     !client.isDirectMode(),
+		MaxIdleConnsPerHost:   100,
+		MaxConnsPerHost:       100,
+		WriteBufferSize:       64 * 1024,
+		ReadBufferSize:        64 * 1024,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	client.httpClient = &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
+
 	return client
 }
 
@@ -199,8 +200,8 @@ func (c *Client) handleConnection(conn net.Conn) {
 	defer cancel()
 	defer conn.Close()
 
-	// Create a unique connection ID for this session
-	connID := generateSessionID()
+	// Use the existing sessionID instead of generating a new one
+	sessionID := c.sessionID
 
 	// Get a buffer from the pool
 	buffer := c.bufferPool.Get().([]byte)
@@ -225,8 +226,8 @@ func (c *Client) handleConnection(conn net.Conn) {
 		})
 	}
 
-	c.sessions.Store(connID, sessionInfo)
-	defer c.sessions.Delete(connID)
+	c.sessions.Store(sessionID, sessionInfo)
+	defer c.sessions.Delete(sessionID)
 	defer safeClose()
 
 	// Start the polling goroutine
@@ -241,9 +242,9 @@ func (c *Client) handleConnection(conn net.Conn) {
 			case <-sessionInfo.done:
 				return
 			case <-ticker.C:
-				if err := c.pollData(ctx, connID, conn); err != nil {
+				if err := c.pollData(ctx, sessionID, conn); err != nil {
 					if !strings.Contains(err.Error(), "EOF") {
-						c.debugLog("Poll error for connection %s: %v", connID, err)
+						c.debugLog("Poll error for connection %s: %v", sessionID, err)
 					}
 					safeClose()
 					return
@@ -257,7 +258,7 @@ func (c *Client) handleConnection(conn net.Conn) {
 		n, err := conn.Read(buffer)
 		if err != nil {
 			if err != io.EOF {
-				c.debugLog("Read error for connection %s: %v", connID, err)
+				c.debugLog("Read error for connection %s: %v", sessionID, err)
 			}
 			safeClose()
 			break
@@ -265,8 +266,8 @@ func (c *Client) handleConnection(conn net.Conn) {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buffer[:n])
-			if err := c.sendData(ctx, connID, data); err != nil {
-				c.debugLog("Send error for connection %s: %v", connID, err)
+			if err := c.sendData(ctx, sessionID, data); err != nil {
+				c.debugLog("Send error for connection %s: %v", sessionID, err)
 				safeClose()
 				break
 			}
@@ -277,8 +278,7 @@ func (c *Client) handleConnection(conn net.Conn) {
 	req, err := c.createDebugRequest(http.MethodPost, c.cloudflareHost, nil)
 	if err == nil {
 		req = req.WithContext(context.Background())
-		req.Header.Set("X-For", connID)
-		req.Header.Set("X-Session", c.sessionID)
+		req.Header.Set("X-For", sessionID)
 		req.Header.Set("X-Connection-Close", "true")
 		resp, err := c.httpClient.Do(req)
 		if err == nil {
@@ -287,15 +287,14 @@ func (c *Client) handleConnection(conn net.Conn) {
 	}
 }
 
-func (c *Client) sendData(ctx context.Context, connID string, data []byte) error {
+func (c *Client) sendData(ctx context.Context, sessionID string, data []byte) error {
 	req, err := c.createDebugRequest(http.MethodPost, c.cloudflareHost, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
 
 	req = req.WithContext(ctx)
-	req.Header.Set("X-For", connID)
-	req.Header.Set("X-Session", c.sessionID)
+	req.Header.Set("X-For", sessionID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -353,22 +352,21 @@ func (c *Client) handleResponse(resp *http.Response, body []byte) {
 			errorMsg += "│ Detail: Received unexpected binary response\n"
 		}
 
-		errorMsg += "���───────────────────────────────────────────────────────────────\n"
+		errorMsg += "───────────────────���───────────────────────────────────────────\n"
 		c.debugLog(errorMsg)
 		return
 	}
 	// ... handle successful response ...
 }
 
-func (c *Client) pollData(ctx context.Context, connID string, conn net.Conn) error {
+func (c *Client) pollData(ctx context.Context, sessionID string, conn net.Conn) error {
 	req, err := c.createDebugRequest(http.MethodGet, c.cloudflareHost, nil)
 	if err != nil {
 		return err
 	}
 
 	req = req.WithContext(ctx)
-	req.Header.Set("X-For", connID)
-	req.Header.Set("X-Session", c.sessionID)
+	req.Header.Set("X-For", sessionID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -565,4 +563,11 @@ func randomFilename() string {
 		".conf", ".cfg", ".ini",
 	}
 	return randomString(minLen, maxLen) + extensions[rand.Intn(len(extensions))]
+}
+
+func (c *Client) isDirectMode() bool {
+	// If the host is an IP address or localhost, we're in direct mode
+	host := strings.Split(c.cloudflareHost, ":")[0]
+	ip := net.ParseIP(host)
+	return ip != nil || host == "localhost" || host == "127.0.0.1" || host == "::1"
 }

@@ -48,13 +48,14 @@ type Session struct {
 }
 
 type Server struct {
-	sessions    sync.Map
-	destHost    string
-	destPort    string
-	debug       bool
-	appCommand  string
-	isAppMode   bool
-	allowDirect bool
+	sessions     sync.Map
+	sessionMutex sync.Mutex
+	destHost     string
+	destPort     string
+	debug        bool
+	appCommand   string
+	isAppMode    bool
+	allowDirect  bool
 }
 
 func NewServer(destHost, destPort string, appCommand string, debug bool, allowDirect bool) *Server {
@@ -270,25 +271,58 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var session *Session
 	sessionInterface, exists := s.sessions.Load(sessionID)
 	if !exists {
+		if s.debug {
+			log.Printf("[DEBUG] No existing session found for %s, creating new session", sessionID[:8])
+		}
 		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		session = &Session{
 			conn:       conn,
 			lastActive: time.Now(),
 			buffer:     make([]byte, 0),
 		}
 		s.sessions.Store(sessionID, session)
+		if s.debug {
+			log.Printf("[DEBUG] New session created and stored for %s", sessionID[:8])
+		}
 	} else {
 		session = sessionInterface.(*Session)
+		if session.conn == nil {
+			if s.debug {
+				log.Printf("[DEBUG] Session %s found but connection is nil, reconnecting", sessionID[:8])
+			}
+			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			session.conn = conn
+			if s.debug {
+				log.Printf("[DEBUG] Reconnected session %s", sessionID[:8])
+			}
+		} else {
+			if s.debug {
+				log.Printf("[DEBUG] Reusing existing connection for session %s", sessionID[:8])
+			}
+		}
 	}
 
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	session.lastActive = time.Now()
+
+	if r.Header.Get("X-Connection-Close") == "true" {
+		if s.debug {
+			log.Printf("[DEBUG] Closing connection for session %s", sessionID[:8])
+		}
+		session.conn.Close()
+		session.conn = nil
+		s.sessions.Delete(sessionID)
+		return
+	}
 
 	if r.Method == http.MethodPost {
 		data, err := io.ReadAll(r.Body)
@@ -452,6 +486,9 @@ func main() {
 			log.Fatalf("Failed to load certificate and key: %v", err)
 		}
 
+		// Create a TLS session cache
+		tlsSessionCache := tls.NewLRUClientSessionCache(1000) // Cache up to 1000 sessions
+
 		server := &http.Server{
 			Addr:    fmt.Sprintf("%s:%s", originHost, originPort),
 			Handler: http.HandlerFunc(server.handleRequest),
@@ -459,9 +496,13 @@ func main() {
 				Certificates: []tls.Certificate{cert},
 				MinVersion:   tls.VersionTLS12,
 				MaxVersion:   tls.VersionTLS13,
-				// Allow any cipher suites
-				CipherSuites: nil,
-				// Don't verify client certs
+				// Enable session tickets for session resumption
+				SessionTicketsDisabled: false,
+				// Use client session cache
+				ClientSessionCache: tlsSessionCache,
+				// Prefer server cipher suites
+				PreferServerCipherSuites: true,
+				// Let server choose cipher suites
 				ClientAuth: tls.NoClientCert,
 				// Handle SNI
 				GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -479,7 +520,6 @@ func main() {
 						log.Printf("  Supported Ciphers: %v", hello.CipherSuites)
 						log.Printf("  Supported Curves: %v", hello.SupportedCurves)
 						log.Printf("  Supported Points: %v", hello.SupportedPoints)
-						log.Printf("  ALPN Protocols: %v", hello.SupportedProtos)
 					}
 					return nil, nil
 				},
@@ -504,6 +544,10 @@ func main() {
 						state, conn.RemoteAddr().String())
 				}
 			},
+			// Add timeouts to prevent hanging connections
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  120 * time.Second,
 		}
 
 		log.Printf("Starting HTTPS server on %s:%s", originHost, originPort)
