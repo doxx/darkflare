@@ -12,7 +12,6 @@ It has two parts: a client-side proxy (darkflare-client) that encodes TCP data i
 
 When using this remember the traffic over the tunnel is only as secure as the Cloudflare protection. Use your own encryption.
 
-
 ## 🧱 Why CDNs?
 Services like Cloudflare, Akamai Technologies, Fastly, and Amazon CloudFront are not only widely accessible but also integral to the global internet infrastructure. In regions with restrictive networks, alternatives such as CDNetworks in Russia, ArvanCloud in Iran, or ChinaCache in China may serve as viable proxies. These CDNs support millions of websites across critical sectors, including government and healthcare, making them indispensable. Blocking them risks significant collateral damage, which inadvertently makes them reliable pathways for bypassing restrictions.
 
