@@ -50,7 +50,6 @@ I've taken a moment to setup some testing darkflare-servers for you to use:
 
 ### US East Miami
 
--allow-direct mode (no CDN involved)
 https://direct.miami.doxx.net:443
 
 https://cdn.miami.doxx.net:443 (only via Cloudflare) 
