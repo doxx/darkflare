@@ -575,6 +575,10 @@ func main() {
 }
 
 func isLocalIP(ip string) bool {
+	if ip == "0.0.0.0" || ip == "localhost" {
+		return true
+	}
+
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
 		return false
