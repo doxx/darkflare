@@ -375,11 +375,11 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// For GET requests, read any available data
-	buffer := make([]byte, 32*1024)      // 32KB buffer
-	readData := make([]byte, 0, 64*1024) // 64KB initial capacity
+	buffer := make([]byte, 128*1024)      // 128KB buffer
+	readData := make([]byte, 0, 256*1024) // 256KB initial capacity
 
 	for {
-		session.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)) // Increased from 10ms to 100ms
+		session.conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond)) // Increased from 10ms to 250ms
 		n, err := session.conn.Read(buffer)
 		if err != nil {
 			if err != io.EOF && !err.(net.Error).Timeout() {
@@ -394,7 +394,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		if n > 0 {
 			readData = append(readData, buffer[:n]...)
 		}
-		if n < len(buffer) || len(readData) >= 64*1024 { // Added size limit check
+		if n < len(buffer) || len(readData) >= 256*1024 { // Added size limit check
 			break
 		}
 	}
@@ -440,9 +440,8 @@ func (s *Server) trackSessionStats(sessionID string, session *Session) {
 			upKbps := float64(upBytes*8) / (1024 * duration)
 			downKbps := float64(downBytes*8) / (1024 * duration)
 
-			log.Printf("[%s] Stats: ID=%s, Source=%s, Up=%d bytes (%.2f kbps), Down=%d bytes (%.2f kbps)",
-				time.Now().Format(time.RFC3339),
-				sessionID[:8],
+			log.Printf("Stats: ID=%s, Source=%s, Up=%d bytes (%.2f kbps), Down=%d bytes (%.2f kbps)",
+				sessionID,
 				session.sourceIP,
 				upBytes,
 				upKbps,

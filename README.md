@@ -72,7 +72,7 @@ Breaking past blocked sites!
 
 ## NordVPN
 
-1. Download the OpenVPN client 
+1. Download the OpenVPN client (cli is better) 
 2. Under Manual setup in your NordVPN web account download the .ovpn file for TCP
 3. Also in Manual setup select username and password authentication.
 4. Edit the .ovpn file and change the IP and port to your darkflare server IP and Port.
@@ -81,11 +81,13 @@ Breaking past blocked sites!
 
 I did provide an ./examples/nordvpn.ovpn for you to use. Also two scrips for up/down to fix some of the routing issues.
 
-Speed tests were around 30Mbps down and 10Mbps up with latency around 30-100ms. Streaming, etc... all seem to work fine.
+Using the OpenVPN commandline client you can embed the username, password, and it runs the scripts properly for you:
+```
+& openvpn --config 127.0.0.1.tcp2222.ovpn --script-security 2
+```
 
-Note: OpenVPN does some weird thing with the default gateway/route. For testing purposes I added: pull-filter ignore "redirect-gateway" to the .ovpn file. That allows me to force the tunnel to not eat my network. 
+Note: OpenVPN by default screws up the default gateway/route. For testing purposes I added: pull-filter ignore "redirect-gateway" to the .ovpn file. That allows me to force the tunnel to not change the routing. The routing can be fixed by the OpenVPN-up.sh and OpenVPN-down.sh scripts. This is due to the fact that the VPN is connecting to the whole CDN range of IP addresses. 
 
-![OpenVPN on NordVPN over TCPoCDN](https://raw.githubusercontent.com/doxx/darkflare/main/images/openvpn.jpg)
 
 ## 🔐 Few Obscureation Techniques
 

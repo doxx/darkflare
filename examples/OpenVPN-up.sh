@@ -3,6 +3,9 @@
 # Exit on any error
 set -e
 
+# Set PATH to include common system binary locations
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
 # File to save the original default route
 default_route_file="default-router.txt"
 
