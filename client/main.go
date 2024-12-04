@@ -82,15 +82,15 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 		debug:           debug,
 		maxBodySize:     10 * 1024 * 1024,
 		rateLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*100), 1000),
-		readBufferSize:  64 * 1024,             // Increase to 64KB
-		writeBufferSize: 64 * 1024,             // Increase to 64KB
-		pollInterval:    25 * time.Millisecond, // Decrease from 50ms to 25ms
+		readBufferSize:  32 * 1024,
+		writeBufferSize: 32 * 1024,
+		pollInterval:    50 * time.Millisecond,
+		batchSize:       32 * 1024,
 		bufferPool: sync.Pool{
 			New: func() interface{} {
 				return make([]byte, 64*1024) // Increase to 64KB
 			},
 		},
-		batchSize: 64 * 1024, // 64KB batch size
 	}
 
 	// Load system root CAs
@@ -110,29 +110,26 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 			CurvePreferences: []tls.CurveID{
 				tls.X25519,
 				tls.CurveP256,
-				tls.CurveP384,
 			},
 			CipherSuites: []uint16{
 				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 			},
-			PreferServerCipherSuites: false,
+			PreferServerCipherSuites: true,
 			SessionTicketsDisabled:   false,
 			InsecureSkipVerify:       false,
-			NextProtos:               []string{"http/1.1"}, // Force HTTP/1.1
+			NextProtos:               []string{"http/1.1"},
 		},
-		MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true,
-		ForceAttemptHTTP2:   false, // Disable HTTP/2
-		MaxIdleConnsPerHost: 100,
-		MaxConnsPerHost:     100,
-		WriteBufferSize:     64 * 1024,
-		ReadBufferSize:      64 * 1024,
+		MaxIdleConns:          1,
+		IdleConnTimeout:       90 * time.Second,
+		DisableCompression:    true,
+		ForceAttemptHTTP2:     false,
+		MaxIdleConnsPerHost:   1,
+		MaxConnsPerHost:       1,
+		WriteBufferSize:       32 * 1024,
+		ReadBufferSize:        32 * 1024,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
 	}
 
 	client.httpClient = &http.Client{
