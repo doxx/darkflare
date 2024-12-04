@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -26,21 +25,16 @@ type Session struct {
 	lastActive time.Time
 	buffer     []byte
 	mu         sync.Mutex
-	bytesUp    int64
-	bytesDown  int64
-	startTime  time.Time
-	sourceIP   string
 }
 
 type Server struct {
-	sessions     sync.Map
-	sessionMutex sync.Mutex
-	destHost     string
-	destPort     string
-	debug        bool
-	appCommand   string
-	isAppMode    bool
-	allowDirect  bool
+	sessions    sync.Map
+	destHost    string
+	destPort    string
+	debug       bool
+	appCommand  string
+	isAppMode   bool
+	allowDirect bool
 }
 
 func NewServer(destHost, destPort string, appCommand string, debug bool, allowDirect bool) *Server {
@@ -53,11 +47,8 @@ func NewServer(destHost, destPort string, appCommand string, debug bool, allowDi
 		allowDirect: allowDirect,
 	}
 
-	if s.debug {
-		log.Printf("Server configuration:")
-		log.Printf("  Allow Direct: %v", allowDirect)
-		log.Printf("  Debug Mode: %v", debug)
-		log.Printf("  App Mode: %v", s.isAppMode)
+	if s.isAppMode && s.debug {
+		log.Printf("Starting in application mode with command: %s", appCommand)
 	}
 
 	go s.cleanupSessions()
@@ -155,40 +146,75 @@ func (s *Server) handleApplication(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
-	// Get client IP from various possible sources
-	clientIP := r.Header.Get("Cf-Connecting-Ip")
-	if clientIP == "" {
-		// Try X-Real-IP
-		clientIP = r.Header.Get("X-Real-IP")
-		if clientIP == "" {
-			// Try X-Forwarded-For
-			clientIP = r.Header.Get("X-Forwarded-For")
-			if clientIP == "" {
-				// Finally, use RemoteAddr
-				clientIP, _, _ = net.SplitHostPort(r.RemoteAddr)
-			}
-		}
-	}
-
-	if s.debug {
-		log.Printf("Request: %s %s from %s",
-			r.Method,
-			r.URL.Path,
-			clientIP,
-		)
-		log.Printf("Headers: %+v", r.Header)
-	}
-
-	// Verify Cloudflare connection
-	if clientIP == "" && !s.allowDirect {
-		http.Error(w, "Direct access not allowed", http.StatusForbidden)
+	if s.isAppMode {
+		s.handleApplication(w, r)
 		return
 	}
 
-	// Check if the request is using TLS
-	if r.TLS == nil {
-		log.Printf("[%s] Non-TLS connection attempt from %s", time.Now().Format(time.RFC3339), clientIP)
-		http.Error(w, "TLS required", http.StatusUpgradeRequired)
+	// Add basic connection logging
+	clientIP := r.Header.Get("X-Forwarded-For")
+	if clientIP == "" {
+		clientIP = r.Header.Get("Cf-Connecting-Ip")
+	}
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+	}
+
+	// Get session ID early
+	sessionID := r.Header.Get("X-For")
+	if sessionID == "" {
+		sessionID = r.Header.Get("Cf-Ray")
+		if sessionID == "" {
+			sessionID = r.Header.Get("Cf-Connecting-Ip")
+		}
+	}
+
+	// Get and decode destination early
+	encodedDest := r.Header.Get("X-Requested-With")
+	if encodedDest == "" {
+		log.Printf("Redirect: %s → https://github.com/doxx/darkflare", clientIP)
+		http.Redirect(w, r, "https://github.com/doxx/darkflare", http.StatusFound)
+		return
+	}
+
+	// Check for connection termination
+	if r.Header.Get("X-Connection-Close") == "true" {
+		sessionDisplay := "no-session"
+		if sessionID != "" {
+			sessionDisplay = sessionID[:8]
+		}
+		log.Printf("Disconnect: %s [%s]", clientIP, sessionDisplay)
+		if sessionInterface, exists := s.sessions.LoadAndDelete(sessionID); exists {
+			session := sessionInterface.(*Session)
+			session.conn.Close()
+		}
+		return
+	}
+
+	destBytes, err := base64.StdEncoding.DecodeString(encodedDest)
+	if err != nil {
+		http.Error(w, "Invalid destination encoding", http.StatusBadRequest)
+		return
+	}
+	destination := string(destBytes)
+
+	// Always log basic connection info
+	sessionDisplay := "no-session"
+	if sessionID != "" {
+		sessionDisplay = sessionID[:8] // First 8 chars of session ID
+	}
+	log.Printf("Connection: %s [%s] → %s", clientIP, sessionDisplay, destination)
+
+	// Debug logging only when enabled
+	if s.debug {
+		log.Printf("Headers: %+v", r.Header)
+		// ... rest of debug logging ...
+	}
+
+	// Verify Cloudflare connection
+	cfConnecting := r.Header.Get("Cf-Connecting-Ip")
+	if cfConnecting == "" && !s.allowDirect {
+		http.Error(w, "Direct access not allowed", http.StatusForbidden)
 		return
 	}
 
@@ -205,29 +231,55 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	// Get the encoded destination from headers
-	encodedDest := r.Header.Get("X-Requested-With")
-	if encodedDest == "" {
-		if s.debug {
-			log.Printf("[DEBUG] Missing X-Requested-With header, redirecting to project page")
-		}
-		http.Redirect(w, r, "https://github.com/doxx/darkflare", http.StatusTemporaryRedirect)
-		return
-	}
-
-	// Decode the destination
-	destBytes, err := base64.StdEncoding.DecodeString(encodedDest)
+	// Validate the destination format and DNS resolution
+	host, port, err := net.SplitHostPort(destination)
 	if err != nil {
 		if s.debug {
-			log.Printf("[DEBUG] Failed to decode X-Requested-With: %v", err)
+			log.Printf("[DEBUG] Invalid destination format %s: %v", destination, err)
 		}
-		http.Error(w, "Invalid destination encoding", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Invalid destination format: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	destination := string(destBytes)
-	if s.debug {
-		log.Printf("[DEBUG] Decoded destination: %s", destination)
+	// Additional host validation
+	if host == "" {
+		if s.debug {
+			log.Printf("[DEBUG] Empty host in destination: %s", destination)
+		}
+		http.Error(w, "Empty host not allowed", http.StatusBadRequest)
+		return
+	}
+
+	// Validate port
+	portNum, err := strconv.Atoi(port)
+	if err != nil || portNum < 1 || portNum > 65535 {
+		if s.debug {
+			log.Printf("[DEBUG] Invalid port %s in destination: %v", port, err)
+		}
+		http.Error(w, fmt.Sprintf("Invalid port number: %s", port), http.StatusBadRequest)
+		return
+	}
+
+	// DNS resolution check
+	if ip := net.ParseIP(host); ip == nil {
+		ips, err := net.LookupHost(host)
+		if err != nil {
+			if s.debug {
+				log.Printf("[DEBUG] DNS resolution failed for %s: %v", host, err)
+			}
+			http.Error(w, fmt.Sprintf("DNS resolution failed: %v", err), http.StatusBadRequest)
+			return
+		}
+		if len(ips) == 0 {
+			if s.debug {
+				log.Printf("[DEBUG] No IP addresses found for host: %s", host)
+			}
+			http.Error(w, "No IP addresses found for host", http.StatusBadRequest)
+			return
+		}
+		if s.debug {
+			log.Printf("[DEBUG] Resolved %s to %v", host, ips)
+		}
 	}
 
 	// Validate the destination
@@ -240,21 +292,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Use the decoded destination for the connection
-	host, port, err := net.SplitHostPort(destination)
-	if err != nil {
-		if s.debug {
-			log.Printf("[DEBUG] Failed to split host:port: %v", err)
-		}
-		http.Error(w, "Invalid destination format", http.StatusBadRequest)
-		return
-	}
-
 	if s.debug {
 		log.Printf("[DEBUG] Connecting to %s:%s", host, port)
 	}
 
 	// Try to get session ID from various possible headers
-	sessionID := r.Header.Get("X-For")
+	sessionID = r.Header.Get("X-For")
 	if sessionID == "" {
 		// Try Cloudflare-specific headers
 		sessionID = r.Header.Get("Cf-Ray")
@@ -272,9 +315,6 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userAgent := r.Header.Get("User-Agent")
-	xForwardedFor := r.Header.Get("X-Forwarded-For")
-
 	var session *Session
 	sessionInterface, exists := s.sessions.Load(sessionID)
 	if !exists {
@@ -283,67 +323,20 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 		session = &Session{
 			conn:       conn,
 			lastActive: time.Now(),
 			buffer:     make([]byte, 0),
-			startTime:  time.Now(),
-			sourceIP:   clientIP,
 		}
 		s.sessions.Store(sessionID, session)
-		log.Printf("[%s] New session: ID=%s, Source=%s, Dest=%s, XFF=%s, UA=%s",
-			time.Now().Format(time.RFC3339),
-			sessionID[:8],
-			clientIP,
-			destination,
-			xForwardedFor,
-			userAgent,
-		)
-		// Start statistics goroutine for this session
-		go s.trackSessionStats(sessionID, session)
 	} else {
 		session = sessionInterface.(*Session)
-		if session.conn == nil {
-			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			session.conn = conn
-		}
 	}
 
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	session.lastActive = time.Now()
-
-	if r.Header.Get("X-Connection-Close") == "true" {
-		session.conn.Close()
-		session.conn = nil
-		s.sessions.Delete(sessionID)
-
-		// Calculate final statistics
-		duration := time.Since(session.startTime).Seconds()
-		upBytes := atomic.LoadInt64(&session.bytesUp)
-		downBytes := atomic.LoadInt64(&session.bytesDown)
-		upKbps := float64(upBytes*8) / (1024 * duration)
-		downKbps := float64(downBytes*8) / (1024 * duration)
-
-		log.Printf("[%s] Session closed: ID=%s, Source=%s, Dest=%s, XFF=%s, UA=%s, Duration=%.1fs, Up=%d bytes (%.2f kbps), Down=%d bytes (%.2f kbps)",
-			time.Now().Format(time.RFC3339),
-			sessionID[:8],
-			session.sourceIP,
-			destination,
-			xForwardedFor,
-			userAgent,
-			duration,
-			upBytes,
-			upKbps,
-			downBytes,
-			downKbps,
-		)
-		return
-	}
 
 	if r.Method == http.MethodPost {
 		data, err := io.ReadAll(r.Body)
@@ -369,17 +362,16 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			atomic.AddInt64(&session.bytesUp, int64(len(data)))
 		}
 		return
 	}
 
 	// For GET requests, read any available data
-	buffer := make([]byte, 128*1024)      // 128KB buffer
-	readData := make([]byte, 0, 256*1024) // 256KB initial capacity
+	buffer := make([]byte, 32*1024)      // 32KB buffer
+	readData := make([]byte, 0, 64*1024) // 64KB initial capacity
 
 	for {
-		session.conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond)) // Increased from 10ms to 250ms
+		session.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)) // Increased from 10ms to 100ms
 		n, err := session.conn.Read(buffer)
 		if err != nil {
 			if err != io.EOF && !err.(net.Error).Timeout() {
@@ -394,7 +386,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		if n > 0 {
 			readData = append(readData, buffer[:n]...)
 		}
-		if n < len(buffer) || len(readData) >= 256*1024 { // Added size limit check
+		if n < len(buffer) || len(readData) >= 64*1024 { // Added size limit check
 			break
 		}
 	}
@@ -411,44 +403,11 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 		w.Write([]byte(encoded))
-		atomic.AddInt64(&session.bytesDown, int64(len(readData)))
 	} else if s.debug {
 		log.Printf("Response: No data to send for session %s path %s",
 			sessionID[:8],
 			r.URL.Path,
 		)
-	}
-}
-
-func (s *Server) trackSessionStats(sessionID string, session *Session) {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Check if session still exists
-			if _, exists := s.sessions.Load(sessionID); !exists {
-				return
-			}
-
-			upBytes := atomic.LoadInt64(&session.bytesUp)
-			downBytes := atomic.LoadInt64(&session.bytesDown)
-			duration := time.Since(session.startTime).Seconds()
-
-			// Calculate rates
-			upKbps := float64(upBytes*8) / (1024 * duration)
-			downKbps := float64(downBytes*8) / (1024 * duration)
-
-			log.Printf("Stats: ID=%s, Source=%s, Up=%d bytes (%.2f kbps), Down=%d bytes (%.2f kbps)",
-				sessionID,
-				session.sourceIP,
-				upBytes,
-				upKbps,
-				downBytes,
-				downKbps,
-			)
-		}
 	}
 }
 
@@ -541,9 +500,6 @@ func main() {
 			log.Fatalf("Failed to load certificate and key: %v", err)
 		}
 
-		// Create a TLS session cache
-		tlsSessionCache := tls.NewLRUClientSessionCache(1000) // Cache up to 1000 sessions
-
 		server := &http.Server{
 			Addr:    fmt.Sprintf("%s:%s", originHost, originPort),
 			Handler: http.HandlerFunc(server.handleRequest),
@@ -551,21 +507,10 @@ func main() {
 				Certificates: []tls.Certificate{cert},
 				MinVersion:   tls.VersionTLS12,
 				MaxVersion:   tls.VersionTLS13,
-				// Disable HTTP/2
-				NextProtos: []string{"http/1.1"},
-				// Enable session tickets for session resumption
-				SessionTicketsDisabled: false,
-				// Use client session cache
-				ClientSessionCache: tlsSessionCache,
-				// Prefer server cipher suites
-				PreferServerCipherSuites: true,
-				// Let server choose cipher suites
-				ClientAuth: func() tls.ClientAuthType {
-					if server.allowDirect {
-						return tls.NoClientCert
-					}
-					return tls.RequestClientCert
-				}(),
+				// Allow any cipher suites
+				CipherSuites: nil,
+				// Don't verify client certs
+				ClientAuth: tls.NoClientCert,
 				// Handle SNI
 				GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
 					if debug {
@@ -582,6 +527,7 @@ func main() {
 						log.Printf("  Supported Ciphers: %v", hello.CipherSuites)
 						log.Printf("  Supported Curves: %v", hello.SupportedCurves)
 						log.Printf("  Supported Points: %v", hello.SupportedPoints)
+						log.Printf("  ALPN Protocols: %v", hello.SupportedProtos)
 					}
 					return nil, nil
 				},
@@ -596,6 +542,8 @@ func main() {
 					}
 					return nil
 				},
+				// Enable HTTP/2 support
+				NextProtos: []string{"h2", "http/1.1"},
 			},
 			ErrorLog: log.New(os.Stderr, "[HTTPS] ", log.LstdFlags),
 			ConnState: func(conn net.Conn, state http.ConnState) {
@@ -604,10 +552,6 @@ func main() {
 						state, conn.RemoteAddr().String())
 				}
 			},
-			// Add timeouts to prevent hanging connections
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  120 * time.Second,
 		}
 
 		log.Printf("Starting HTTPS server on %s:%s", originHost, originPort)
@@ -631,54 +575,65 @@ func main() {
 }
 
 func isLocalIP(ip string) bool {
-	if ip == "0.0.0.0" || ip == "127.0.0.1" || ip == "::1" {
-		return true
-	}
-
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
 		return false
 	}
 
-	// Check if IP is assigned to any local interface
 	interfaces, err := net.Interfaces()
 	if err != nil {
+		log.Printf("Error getting network interfaces: %v", err)
 		return false
 	}
 
 	for _, iface := range interfaces {
 		addrs, err := iface.Addrs()
 		if err != nil {
+			log.Printf("Error getting addresses for interface %s: %v", iface.Name, err)
 			continue
 		}
+
 		for _, addr := range addrs {
+			var localIP net.IP
 			switch v := addr.(type) {
 			case *net.IPNet:
-				if v.IP.String() == ip {
-					return true
-				}
+				localIP = v.IP
 			case *net.IPAddr:
-				if v.IP.String() == ip {
-					return true
-				}
+				localIP = v.IP
+			}
+
+			if localIP.Equal(ipAddr) {
+				return true
 			}
 		}
 	}
 
-	// Also allow loopback and private IPs
-	return ipAddr.IsLoopback() || ipAddr.IsPrivate()
+	return false
 }
 
 func isValidDestination(dest string) bool {
-	_, portStr, err := net.SplitHostPort(dest)
+	host, portStr, err := net.SplitHostPort(dest)
 	if err != nil {
 		return false
 	}
 
+	// Validate port
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
 		return false
 	}
 
-	return true
+	// Validate host
+	if host == "" {
+		return false
+	}
+
+	// Check if it's an IP address
+	if ip := net.ParseIP(host); ip != nil {
+		return true
+	}
+
+	// Try DNS resolution
+	ips, err := net.LookupHost(host)
+	return err == nil && len(ips) > 0
 }

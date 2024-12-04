@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"crypto/x509"
+
 	"golang.org/x/time/rate"
 )
 
@@ -91,33 +93,46 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 		batchSize: 64 * 1024, // 64KB batch size
 	}
 
+	// Load system root CAs
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil {
+		log.Printf("Warning: failed to load system cert pool: %v", err)
+		rootCAs = x509.NewCertPool()
+		if rootCAs == nil {
+			log.Fatal("Failed to create cert pool")
+		}
+	}
+
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
+			RootCAs:    rootCAs,
 			MinVersion: tls.VersionTLS12,
-			MaxVersion: tls.VersionTLS13,
 			CurvePreferences: []tls.CurveID{
 				tls.X25519,
 				tls.CurveP256,
+				tls.CurveP384,
 			},
 			CipherSuites: []uint16{
 				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 			},
-			PreferServerCipherSuites: true,
+			PreferServerCipherSuites: false,
 			SessionTicketsDisabled:   false,
 			InsecureSkipVerify:       false,
-			Renegotiation:            tls.RenegotiateNever,
+			NextProtos:               []string{"http/1.1"}, // Force HTTP/1.1
 		},
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		DisableCompression:    true,
-		ForceAttemptHTTP2:     !client.isDirectMode(),
-		MaxIdleConnsPerHost:   100,
-		MaxConnsPerHost:       100,
-		WriteBufferSize:       64 * 1024,
-		ReadBufferSize:        64 * 1024,
-		ResponseHeaderTimeout: 30 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConns:        100,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
+		ForceAttemptHTTP2:   false, // Disable HTTP/2
+		MaxIdleConnsPerHost: 100,
+		MaxConnsPerHost:     100,
+		WriteBufferSize:     64 * 1024,
+		ReadBufferSize:      64 * 1024,
 	}
 
 	client.httpClient = &http.Client{
