@@ -170,10 +170,10 @@ You can replace the doxx.net server with your own and setup your own server:
 
 ```bash
 # HTTPS Server (recommended for production)
-./darkflare-server -l :443 -cert /path/to/cert.pem -key /path/to/key.pem
+./darkflare-server -o https://direct.miami.us.doxx.net:443 -c /path/to/cert.pem -k /path/to/key.pem
 
 # HTTP Server (for testing)
-./darkflare-server -l :8080
+./darkflare-server -o http://direct.miami.us.doxx.net:8080
 ```
 
 ### Notes
