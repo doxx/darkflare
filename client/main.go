@@ -117,7 +117,7 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 			},
 			PreferServerCipherSuites: true,
 			SessionTicketsDisabled:   false,
-			InsecureSkipVerify:       false,
+			InsecureSkipVerify:       true,
 			NextProtos:               []string{"http/1.1"},
 		},
 		MaxIdleConns:          1,
