@@ -596,3 +596,23 @@ func (c *Client) isDirectMode() bool {
 	ip := net.ParseIP(host)
 	return ip != nil || host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
+
+func (c *Client) handleError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Only log if in debug mode or if it's not the common HTTP/2 stream error
+	if c.debug || !strings.Contains(err.Error(), "protocol error: received DATA after END_STREAM") {
+		c.debugLog("Error: %v", err)
+	}
+
+	// Return true if this is a fatal error that should break the connection
+	if strings.Contains(err.Error(), "connection refused") ||
+		strings.Contains(err.Error(), "no such host") ||
+		strings.Contains(err.Error(), "connection reset") {
+		return true
+	}
+
+	return false
+}

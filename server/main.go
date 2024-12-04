@@ -585,11 +585,36 @@ func main() {
 }
 
 func isLocalIP(ip string) bool {
+	// Allow common local binding addresses
+	if ip == "0.0.0.0" || ip == "localhost" || ip == "::" {
+		return true
+	}
+
+	// Parse IP address
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
+		// Try to resolve hostname
+		addrs, err := net.LookupHost(ip)
+		if err != nil {
+			return false
+		}
+		// Check if any resolved address is local
+		for _, addr := range addrs {
+			if parsedIP := net.ParseIP(addr); parsedIP != nil {
+				if parsedIP.IsLoopback() {
+					return true
+				}
+			}
+		}
 		return false
 	}
 
+	// Check if it's a loopback address
+	if ipAddr.IsLoopback() {
+		return true
+	}
+
+	// Check against network interfaces
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		log.Printf("Error getting network interfaces: %v", err)
@@ -599,7 +624,6 @@ func isLocalIP(ip string) bool {
 	for _, iface := range interfaces {
 		addrs, err := iface.Addrs()
 		if err != nil {
-			log.Printf("Error getting addresses for interface %s: %v", iface.Name, err)
 			continue
 		}
 
@@ -612,7 +636,7 @@ func isLocalIP(ip string) bool {
 				localIP = v.IP
 			}
 
-			if localIP.Equal(ipAddr) {
+			if localIP != nil && localIP.Equal(ipAddr) {
 				return true
 			}
 		}
