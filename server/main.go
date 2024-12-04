@@ -35,9 +35,10 @@ type Server struct {
 	appCommand  string
 	isAppMode   bool
 	allowDirect bool
+	silent      bool
 }
 
-func NewServer(destHost, destPort string, appCommand string, debug bool, allowDirect bool) *Server {
+func NewServer(destHost, destPort string, appCommand string, debug bool, allowDirect bool, silent bool) *Server {
 	s := &Server{
 		destHost:    destHost,
 		destPort:    destPort,
@@ -45,9 +46,10 @@ func NewServer(destHost, destPort string, appCommand string, debug bool, allowDi
 		appCommand:  appCommand,
 		isAppMode:   appCommand != "",
 		allowDirect: allowDirect,
+		silent:      silent,
 	}
 
-	if s.isAppMode && s.debug {
+	if s.isAppMode && s.debug && !s.silent {
 		log.Printf("Starting in application mode with command: %s", appCommand)
 	}
 
@@ -203,7 +205,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if sessionID != "" {
 		sessionDisplay = sessionID[:8] // First 8 chars of session ID
 	}
-	log.Printf("Connection: %s [%s] → %s", clientIP, sessionDisplay, destination)
+	s.logf("Connection: %s [%s] → %s", clientIP, sessionDisplay, destination)
 
 	// Debug logging only when enabled
 	if s.debug {
@@ -418,6 +420,7 @@ func main() {
 	var debug bool
 	var allowDirect bool
 	var appCommand string
+	var silent bool
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "DarkFlare Server - TCP-over-CDN tunnel server component\n")
@@ -437,6 +440,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "            Default: Auto-generated with cert\n\n")
 		fmt.Fprintf(os.Stderr, "  -debug    Enable detailed debug logging\n")
 		fmt.Fprintf(os.Stderr, "            Shows connection details and errors\n\n")
+		fmt.Fprintf(os.Stderr, "  -s        Silent mode\n")
+		fmt.Fprintf(os.Stderr, "            Suppresses all non-error output\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic setup:\n")
 		fmt.Fprintf(os.Stderr, "    %s -o http://0.0.0.0:8080\n\n", os.Args[0])
@@ -457,6 +462,7 @@ func main() {
 	flag.StringVar(&appCommand, "a", "", "")
 	flag.BoolVar(&debug, "debug", false, "")
 	flag.BoolVar(&allowDirect, "allow-direct", false, "")
+	flag.BoolVar(&silent, "s", false, "")
 	flag.Parse()
 
 	// Parse origin URL
@@ -481,7 +487,11 @@ func main() {
 		log.Fatal("Origin host must be a local IP address")
 	}
 
-	server := NewServer(originHost, originPort, appCommand, debug, allowDirect)
+	if !silent {
+		log.Printf("DarkFlare server listening on %s", origin)
+	}
+
+	server := NewServer(originHost, originPort, appCommand, debug, allowDirect, silent)
 
 	log.Printf("DarkFlare server running on %s://%s:%s", originURL.Scheme, originHost, originPort)
 	if allowDirect {
@@ -636,4 +646,10 @@ func isValidDestination(dest string) bool {
 	// Try DNS resolution
 	ips, err := net.LookupHost(host)
 	return err == nil && len(ips) > 0
+}
+
+func (s *Server) logf(format string, v ...interface{}) {
+	if !s.silent {
+		log.Printf(format, v...)
+	}
 }

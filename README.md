@@ -173,7 +173,7 @@ You can replace the doxx.net server with your own and setup your own server:
 ./darkflare-server -o https://direct.miami.us.doxx.net:443 -c /path/to/cert.pem -k /path/to/key.pem
 
 # HTTP Server (for testing)
-./darkflare-server -o http://direct.miami.us.doxx.net:8080
+./darkflare-server -o http://direct.miami.us.doxx.net:8080 -allow-direct
 ```
 
 ### Notes
