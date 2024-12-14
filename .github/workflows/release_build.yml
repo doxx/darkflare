@@ -1,0 +1,79 @@
+name: Release Build
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+        goos: [darwin, linux, windows]
+        type: [server, client]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Define extension file name for windows
+      run: |
+        if [ "${{ matrix.goos }}" = "windows" ]; then
+          echo "BIN_EXT=.exe" >> $GITHUB_ENV
+        else
+          echo "BIN_EXT=" >> $GITHUB_ENV
+        fi
+    
+    - name: Define file name
+      run: |
+        echo "FILE_NAME=darkflare-${{ matrix.type }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ env.BIN_EXT }}" >> $GITHUB_ENV
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.3'
+    
+    - name: Download Go dependencies
+      run: go mod tidy
+    
+    - name: Build for ${{ matrix.type }} ${{ matrix.goarch }} ${{ matrix.goos }}
+      run: GOARCH=${{ matrix.goarch }} GOOS=${{ matrix.goos }} go build -o ${{ env.FILE_NAME }} ${{ matrix.type }}/main.go
+    
+    - name: Generate checksum
+      run: sha256sum ${{ env.FILE_NAME }} >> checksum-${{ env.FILE_NAME }}
+
+    - name: Upload checksum artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: checksum-${{ env.FILE_NAME }}
+        path: checksum-${{ env.FILE_NAME }}
+        retention-days: 1
+
+    - name: Upload binary to release
+      uses: softprops/action-gh-release@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        files: ${{ env.FILE_NAME }}
+  
+  upload-checksums:
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Generate checksum file
+        run: cat checksum-*/* > checksums.txt
+
+      - name: Upload checksum file to release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: checksums.txt
