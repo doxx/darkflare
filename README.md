@@ -45,22 +45,6 @@ Flow:
 4. Unwrapped back to TCP ──> Target Service
 ```
 
-##  Open Test Relay Servers
-I've taken a moment to setup some testing darkflare-servers for you to use:
-
-### US East Miami
-
-HTTPS Server:
-https://direct.miami.us.doxx.net:443
-
-HTTP Server no-SSL:
-http://direct.miami.us.doxx.net:8080
-
-Cloudflare CDN:
-https://cdn.miami.us.doxx.net:443 
-
-You may use these to test your darkflare-client without setting up your own. If these are abused I will add authentication, so don't abuse them.
-
 ### CA Root Notes
 In some cases the direct server might fail TLS. If that happens you can use the CDN server or make sure you have the CA certs:
 
