@@ -547,9 +547,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  2. Connect via: ssh -p 2222 user@localhost\n\n")
 		fmt.Fprintf(os.Stderr, "Notes:\n")
 		fmt.Fprintf(os.Stderr, "  - Proxy authentication is supported via URL format user:pass@host\n")
-		fmt.Fprintf(os.Stderr, "  - SOCKS5h variant will resolve hostnames through the proxy\n")
+		fmt.Fprintf(os.Stderr, "  - SOCKS5 variant will resolve hostnames through the proxy\n")
 		fmt.Fprintf(os.Stderr, "  - Debug mode will show proxy connection details and errors\n\n")
-		fmt.Fprintf(os.Stderr, "For more information: https://github.com/blyon/darkflare\n")
+		fmt.Fprintf(os.Stderr, "For more information: https://github.com/doxx/darkflare\n")
 	}
 
 	flag.IntVar(&localPort, "l", 0, "")
