@@ -23,6 +23,7 @@ import (
 
 	"crypto/x509"
 
+	"golang.org/x/net/proxy"
 	"golang.org/x/time/rate"
 )
 
@@ -48,6 +49,7 @@ type Client struct {
 	writeBufferSize int
 	pollInterval    time.Duration
 	batchSize       int
+	proxyURL        string
 }
 
 func generateSessionID() string {
@@ -59,7 +61,7 @@ func generateSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-func NewClient(cloudflareHost string, destPort int, scheme string, destAddr string, debug bool) *Client {
+func NewClient(cloudflareHost string, destPort int, scheme string, destAddr string, debug bool, proxyURL string) *Client {
 	rand.Seed(time.Now().UnixNano())
 
 	if scheme == "" {
@@ -86,9 +88,10 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 		writeBufferSize: 32 * 1024,
 		pollInterval:    50 * time.Millisecond,
 		batchSize:       32 * 1024,
+		proxyURL:        proxyURL,
 		bufferPool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 64*1024) // Increase to 64KB
+				return make([]byte, 64*1024)
 			},
 		},
 	}
@@ -130,6 +133,29 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 		ReadBufferSize:        32 * 1024,
 		ResponseHeaderTimeout: 30 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	// Configure proxy support
+	if proxyURL != "" {
+		if strings.HasPrefix(proxyURL, "socks") {
+			// Handle SOCKS proxy
+			dialer, err := proxy.SOCKS5("tcp", proxyURL[strings.Index(proxyURL, "//")+2:], nil, proxy.Direct)
+			if err != nil {
+				log.Printf("Error creating SOCKS5 dialer: %v", err)
+			} else {
+				transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return dialer.Dial(network, addr)
+				}
+			}
+		} else {
+			// Handle HTTP/HTTPS proxy
+			proxyURLParsed, err := url.Parse(proxyURL)
+			if err != nil {
+				log.Printf("Error parsing proxy URL: %v", err)
+			} else {
+				transport.Proxy = http.ProxyURL(proxyURLParsed)
+			}
+		}
 	}
 
 	client.httpClient = &http.Client{
@@ -448,6 +474,7 @@ func main() {
 	var targetURL string
 	var destAddr string
 	var debug bool
+	var proxyURL string
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "DarkFlare Client - TCP-over-CDN tunnel client component\n")
@@ -466,6 +493,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "            This is where your traffic will ultimately be sent\n\n")
 		fmt.Fprintf(os.Stderr, "  -debug    Enable detailed debug logging\n")
 		fmt.Fprintf(os.Stderr, "            Shows connection details, data transfer, and errors\n\n")
+		fmt.Fprintf(os.Stderr, "  -p        Proxy URL for outbound connections\n")
+		fmt.Fprintf(os.Stderr, "            Format: http://host:port or socks5://host:port\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic SSH tunnel:\n")
 		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t https://cdn.miami.us.doxx.net -d ssh.destination.com:22\n\n", os.Args[0])
@@ -483,6 +512,7 @@ func main() {
 	flag.StringVar(&targetURL, "t", "", "")
 	flag.StringVar(&destAddr, "d", "", "")
 	flag.BoolVar(&debug, "debug", false, "")
+	flag.StringVar(&proxyURL, "p", "", "Proxy URL (http://host:port or socks5://host:port)")
 	flag.Parse()
 
 	if len(os.Args) == 1 {
@@ -544,7 +574,7 @@ func main() {
 			continue
 		}
 
-		client := NewClient(host, destPort, scheme, destAddr, debug)
+		client := NewClient(host, destPort, scheme, destAddr, debug, proxyURL)
 		go client.handleConnection(conn)
 	}
 }
