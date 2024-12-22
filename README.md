@@ -115,6 +115,8 @@ I used 8080 with a Cloudflare proxy via HTTP for the firs test. Less overhead.
 - **TLS Security**: Because we're sneaky, not reckless
 - **Client-controlled destination addressing**: The destination (-d) is now specified on the client side and securely transmitted to the server
 - **Base64 encoded destination transmission**: The server no longer requires a destination parameter (-d has been removed)
+- **Reverse Proxy Support**: The client now supports SOCKS5 and HTTP(s) proxies.
+- **Custom 302**: Server now has defined 302 redirects for non-auth users.
 
 ## 🚀 Quick Start
 

@@ -137,24 +137,58 @@ func NewClient(cloudflareHost string, destPort int, scheme string, destAddr stri
 
 	// Configure proxy support
 	if proxyURL != "" {
-		if strings.HasPrefix(proxyURL, "socks") {
-			// Handle SOCKS proxy
-			dialer, err := proxy.SOCKS5("tcp", proxyURL[strings.Index(proxyURL, "//")+2:], nil, proxy.Direct)
-			if err != nil {
-				log.Printf("Error creating SOCKS5 dialer: %v", err)
-			} else {
-				transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-					return dialer.Dial(network, addr)
+		if client.debug {
+			client.debugLog("Configuring proxy: %s", proxyURL)
+		}
+
+		proxyURLParsed, err := url.Parse(proxyURL)
+		if err != nil {
+			log.Printf("Invalid proxy URL: %v", err)
+			return nil
+		}
+
+		switch proxyURLParsed.Scheme {
+		case "socks5", "socks5h":
+			// Extract auth if present
+			var auth *proxy.Auth
+			if proxyURLParsed.User != nil {
+				auth = &proxy.Auth{
+					User: proxyURLParsed.User.Username(),
+				}
+				if password, ok := proxyURLParsed.User.Password(); ok {
+					auth.Password = password
 				}
 			}
-		} else {
-			// Handle HTTP/HTTPS proxy
-			proxyURLParsed, err := url.Parse(proxyURL)
+
+			// Create SOCKS5 dialer
+			dialer, err := proxy.SOCKS5("tcp", proxyURLParsed.Host, auth, proxy.Direct)
 			if err != nil {
-				log.Printf("Error parsing proxy URL: %v", err)
-			} else {
-				transport.Proxy = http.ProxyURL(proxyURLParsed)
+				log.Printf("Failed to create SOCKS5 dialer: %v", err)
+				return nil
 			}
+
+			transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				if client.debug {
+					client.debugLog("SOCKS5 dialing %s via %s", addr, proxyURLParsed.Host)
+				}
+				return dialer.Dial(network, addr)
+			}
+
+		case "http", "https":
+			transport.Proxy = http.ProxyURL(proxyURLParsed)
+
+			// Add proxy authentication if present
+			if proxyURLParsed.User != nil {
+				basicAuth := "Basic " + base64.StdEncoding.EncodeToString(
+					[]byte(proxyURLParsed.User.String()))
+				transport.ProxyConnectHeader = http.Header{
+					"Proxy-Authorization": []string{basicAuth},
+				}
+			}
+
+		default:
+			log.Printf("Unsupported proxy scheme: %s", proxyURLParsed.Scheme)
+			return nil
 		}
 	}
 
@@ -494,17 +528,27 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  -debug    Enable detailed debug logging\n")
 		fmt.Fprintf(os.Stderr, "            Shows connection details, data transfer, and errors\n\n")
 		fmt.Fprintf(os.Stderr, "  -p        Proxy URL for outbound connections\n")
-		fmt.Fprintf(os.Stderr, "            Format: http://host:port or socks5://host:port\n\n")
+		fmt.Fprintf(os.Stderr, "            Format: scheme://[user:pass@]host:port\n")
+		fmt.Fprintf(os.Stderr, "            Supported schemes: http, https, socks5, socks5h\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic SSH tunnel:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t https://cdn.miami.us.doxx.net -d ssh.destination.com:22\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  Custom port with debugging:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l 8080 -t https://tunnel.example.com:8443 -d internal.service:80 -debug\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  HTTP proxy tunnel:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l 8080 -t http://proxy.example.com -d target.site.com:80\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t cdn.example.com -d ssh.target.com:22\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  With HTTP proxy:\n")
+		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t cdn.example.com -d ssh.target.com:22 \\\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "      -p http://proxy.example.com:8080\n\n")
+		fmt.Fprintf(os.Stderr, "  With authenticated SOCKS5 proxy:\n")
+		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t cdn.example.com -d ssh.target.com:22 \\\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "      -p socks5://user:pass@proxy.example.com:1080\n\n")
+		fmt.Fprintf(os.Stderr, "  Debug mode with HTTPS proxy:\n")
+		fmt.Fprintf(os.Stderr, "    %s -l 8080 -t cdn.example.com -d internal.service:80 \\\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "      -p https://proxy.company.com:443 -debug\n\n")
 		fmt.Fprintf(os.Stderr, "Usage with SSH:\n")
-		fmt.Fprintf(os.Stderr, "  1. Start the client: %s -l 2222 -t tunnel.example.com -d ssh.target.com:22\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  1. Start the client: %s -l 2222 -t cdn.example.com -d ssh.target.com:22\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  2. Connect via: ssh -p 2222 user@localhost\n\n")
+		fmt.Fprintf(os.Stderr, "Notes:\n")
+		fmt.Fprintf(os.Stderr, "  - Proxy authentication is supported via URL format user:pass@host\n")
+		fmt.Fprintf(os.Stderr, "  - SOCKS5h variant will resolve hostnames through the proxy\n")
+		fmt.Fprintf(os.Stderr, "  - Debug mode will show proxy connection details and errors\n\n")
 		fmt.Fprintf(os.Stderr, "For more information: https://github.com/blyon/darkflare\n")
 	}
 

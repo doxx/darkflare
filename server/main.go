@@ -36,9 +36,10 @@ type Server struct {
 	isAppMode   bool
 	allowDirect bool
 	silent      bool
+	redirect    string
 }
 
-func NewServer(destHost, destPort string, appCommand string, debug bool, allowDirect bool, silent bool) *Server {
+func NewServer(destHost, destPort string, appCommand string, debug bool, allowDirect bool, silent bool, redirect string) *Server {
 	s := &Server{
 		destHost:    destHost,
 		destPort:    destPort,
@@ -47,6 +48,7 @@ func NewServer(destHost, destPort string, appCommand string, debug bool, allowDi
 		isAppMode:   appCommand != "",
 		allowDirect: allowDirect,
 		silent:      silent,
+		redirect:    redirect,
 	}
 
 	if s.isAppMode && s.debug && !s.silent {
@@ -174,8 +176,12 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Get and decode destination early
 	encodedDest := r.Header.Get("X-Requested-With")
 	if encodedDest == "" {
-		log.Printf("Redirect: %s → https://github.com/doxx/darkflare", clientIP)
-		http.Redirect(w, r, "https://github.com/doxx/darkflare", http.StatusFound)
+		redirectURL := s.redirect
+		if redirectURL == "" {
+			redirectURL = "https://github.com/doxx/darkflare"
+		}
+		log.Printf("Redirect: %s → %s", clientIP, redirectURL)
+		http.Redirect(w, r, redirectURL, http.StatusFound)
 		return
 	}
 
@@ -421,6 +427,7 @@ func main() {
 	var allowDirect bool
 	var appCommand string
 	var silent bool
+	var redirect string
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "DarkFlare Server - TCP-over-CDN tunnel server component\n")
@@ -442,6 +449,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "            Shows connection details and errors\n\n")
 		fmt.Fprintf(os.Stderr, "  -s        Silent mode\n")
 		fmt.Fprintf(os.Stderr, "            Suppresses all non-error output\n\n")
+		fmt.Fprintf(os.Stderr, "  -redirect Custom URL to redirect unauthorized requests\n")
+		fmt.Fprintf(os.Stderr, "            Default: GitHub project page\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic setup:\n")
 		fmt.Fprintf(os.Stderr, "    %s -o http://0.0.0.0:8080\n\n", os.Args[0])
@@ -463,6 +472,7 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "")
 	flag.BoolVar(&allowDirect, "allow-direct", false, "")
 	flag.BoolVar(&silent, "s", false, "")
+	flag.StringVar(&redirect, "redirect", "", "Custom URL to redirect unauthorized requests (default: GitHub project page)")
 	flag.Parse()
 
 	// Parse origin URL
@@ -491,7 +501,7 @@ func main() {
 		log.Printf("DarkFlare server listening on %s", origin)
 	}
 
-	server := NewServer(originHost, originPort, appCommand, debug, allowDirect, silent)
+	server := NewServer(originHost, originPort, appCommand, debug, allowDirect, silent, redirect)
 
 	log.Printf("DarkFlare server running on %s://%s:%s", originURL.Scheme, originHost, originPort)
 	if allowDirect {
@@ -585,11 +595,22 @@ func main() {
 }
 
 func isLocalIP(ip string) bool {
+	// Allow 0.0.0.0 as a valid binding address
+	if ip == "0.0.0.0" {
+		return true
+	}
+
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
 		return false
 	}
 
+	// Check if it's a loopback address
+	if ipAddr.IsLoopback() {
+		return true
+	}
+
+	// Get all network interfaces
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		log.Printf("Error getting network interfaces: %v", err)
@@ -604,16 +625,15 @@ func isLocalIP(ip string) bool {
 		}
 
 		for _, addr := range addrs {
-			var localIP net.IP
 			switch v := addr.(type) {
 			case *net.IPNet:
-				localIP = v.IP
+				if v.IP.Equal(ipAddr) {
+					return true
+				}
 			case *net.IPAddr:
-				localIP = v.IP
-			}
-
-			if localIP.Equal(ipAddr) {
-				return true
+				if v.IP.Equal(ipAddr) {
+					return true
+				}
 			}
 		}
 	}
