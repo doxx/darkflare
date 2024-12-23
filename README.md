@@ -286,52 +286,80 @@ powershell -ExecutionPolicy Bypass -File memory-exec.ps1 -t cdn.example.com -d l
 - The binary is still downloaded, just not saved to disk
 - Network administrators may still see the download traffic
 
-### SSH Configuration
-For persistent SSH configuration, add to your `~/.ssh/config`:
+## 🔄 Advanced SSH Integration
+
+### Understanding the Proxy Chain
+DarkFlare can create a sophisticated proxy chain when using SSH ProxyCommand mode:
+
 ```
-Host remote.example.com
-    ProxyCommand powershell -ExecutionPolicy Bypass -File C:/path/to/memory-exec.ps1 -t cdn.example.com -d localhost:22
+                     CORPORATE FIREWALL
+                     |     |     |     |
+                     v     v     v     v
+
+[SSH Client]         [Optional Proxy]        [Cloudflare]         [Target]
+    |                     |                      |                   |
+    |                     |                      |                   |
+    |   stdin/stdout      |       HTTPS         |      TCP          |
+    | =================>  |  =================>  | =================> |
+    |  darkflare-client  |    CDN Traffic      |  darkflare-server |
+    |                     |                      |                   |
+    |                     |                      |                   |
+    
+Flow:
+1. SSH ──> darkflare-client (via stdin/stdout)
+2. darkflare-client ──> Optional Proxy (SOCKS5/HTTP)
+3. Proxy ──> Cloudflare CDN
+4. Cloudflare ──> darkflare-server
+5. darkflare-server ──> Target SSH Server
 ```
 
-Or for truly fileless operation:
+### How It Works
+1. **SSH ProxyCommand Integration**
+   - Instead of binding to a local port (`-l 2222`), which can trigger firewalls
+   - Uses `-l stdin:stdout` to communicate directly with SSH
+   - Avoids all local TCP socket issues
+   ```bash
+   ssh -o ProxyCommand="darkflare-client -l stdin:stdout -t cdn.example.com -d localhost:22" user@remote
+   ```
+
+2. **Optional Proxy Support**
+   - Use `-p` to specify an outbound proxy
+   - Supports SOCKS5, HTTP, and HTTPS proxies
+   - Optional authentication supported
+   ```bash
+   # Format: -p scheme://[user:pass@]host:port
+   -p socks5://proxy.local:1080
+   -p http://user:pass@proxy.local:3128
+   ```
+
+3. **Complete Example with Proxy**
+   ```bash
+   ssh -o ProxyCommand="darkflare-client -l stdin:stdout -t cdn.example.com -d localhost:22 -p socks5://proxy.local:1080" user@remote
+   ```
+
+### Benefits of This Approach
+- **No Local Ports**: Avoids firewall restrictions on binding to ports
+- **Proxy Flexibility**: Works with existing corporate proxies
+- **Clean Traffic**: All external traffic looks like HTTPS to CDN
+- **Authentication**: Supports proxy authentication when required
+- **Firewall Friendly**: Operates entirely through allowed ports/protocols
+
+### SSH Config Example
+Add to your `~/.ssh/config` for persistent configuration:
 ```
-Host remote.example.com
-    ProxyCommand powershell -Command "$script = (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/doxx/darkflare/main/examples/memory-exec.ps1'); powershell -Command $script -t cdn.example.com -d localhost:22"
+Host remote-server
+    HostName remote-server.example.com
+    User myuser
+    ProxyCommand darkflare-client -l stdin:stdout \
+                                 -t cdn.example.com \
+                                 -d localhost:22 \
+                                 -p socks5://proxy.local:1080
 ```
 
-### Linux/Unix Memory Execution
-On Linux and Unix-like systems, you can use curl and bash to achieve similar fileless execution:
-
+Then simply:
 ```bash
-# Basic usage with curl
-curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- -l stdin:stdout -t cdn.example.com -d localhost:22
-
-# Direct SSH ProxyCommand usage
-ssh -o ProxyCommand="curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- -l stdin:stdout -t cdn.example.com -d localhost:22" user@remote
-
-# With a SOCKS5 proxy
-curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- -l stdin:stdout -t cdn.example.com -d localhost:22 -p socks5://proxy:1080
+ssh remote-server
 ```
-
-For macOS, replace `linux-amd64` with `darwin-amd64` (Intel) or `darwin-arm64` (Apple Silicon).
-
-### SSH Configuration for Unix Systems
-Add to your `~/.ssh/config`:
-```
-Host remote.example.com
-    ProxyCommand curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- -l stdin:stdout -t cdn.example.com -d localhost:22
-```
-
-### Security Note for Unix Systems
-While this method works, it's important to note:
-- The binary is executed with your current user permissions
-- Consider using checksum verification for enhanced security:
-```bash
-# Verify checksum before execution
-curl -s https://github.com/doxx/darkflare/releases/latest/download/checksums.txt | grep linux-amd64 | sha256sum -c - && \
-curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- [options]
-```
-
 
 ## 📖 Command Line Reference
 
