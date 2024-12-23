@@ -504,7 +504,7 @@ func (c *Client) pollData(ctx context.Context, sessionID string, conn net.Conn) 
 }
 
 func main() {
-	var localPort int
+	var localAddr string
 	var targetURL string
 	var destAddr string
 	var debug bool
@@ -516,8 +516,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage:\n")
 		fmt.Fprintf(os.Stderr, "  %s [options]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  -l        Local port to listen on for incoming connections\n")
-		fmt.Fprintf(os.Stderr, "            This is where your applications will connect to\n\n")
+		fmt.Fprintf(os.Stderr, "  -l        Local port or stdin:stdout for ProxyCommand mode\n")
+		fmt.Fprintf(os.Stderr, "            Format: <port> or stdin:stdout\n")
+		fmt.Fprintf(os.Stderr, "            Examples: 2222 or stdin:stdout\n\n")
 		fmt.Fprintf(os.Stderr, "  -t        Target URL of your cdn-protected darkflare-server\n")
 		fmt.Fprintf(os.Stderr, "            Format: [http(s)://]hostname[:port]\n")
 		fmt.Fprintf(os.Stderr, "            Default scheme: https, Default ports: 80/443\n")
@@ -533,18 +534,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic SSH tunnel:\n")
 		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t cdn.example.com -d ssh.target.com:22\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  With HTTP proxy:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t cdn.example.com -d ssh.target.com:22 \\\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "      -p http://proxy.example.com:8080\n\n")
-		fmt.Fprintf(os.Stderr, "  With authenticated SOCKS5 proxy:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t cdn.example.com -d ssh.target.com:22 \\\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "      -p socks5://user:pass@proxy.example.com:1080\n\n")
-		fmt.Fprintf(os.Stderr, "  Debug mode with HTTPS proxy:\n")
-		fmt.Fprintf(os.Stderr, "    %s -l 8080 -t cdn.example.com -d internal.service:80 \\\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "      -p https://proxy.company.com:443 -debug\n\n")
-		fmt.Fprintf(os.Stderr, "Usage with SSH:\n")
-		fmt.Fprintf(os.Stderr, "  1. Start the client: %s -l 2222 -t cdn.example.com -d ssh.target.com:22\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  2. Connect via: ssh -p 2222 user@localhost\n\n")
+		fmt.Fprintf(os.Stderr, "  SSH ProxyCommand mode:\n")
+		fmt.Fprintf(os.Stderr, "    ssh -o ProxyCommand=\"%s -l stdin:stdout -t cdn.example.com -d %%h:%%p\" user@remote\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  Usage with SSH ProxyCommand:\n")
+		fmt.Fprintf(os.Stderr, "    Add to ~/.ssh/config:\n")
+		fmt.Fprintf(os.Stderr, "      Host remote.example.com\n")
+		fmt.Fprintf(os.Stderr, "        ProxyCommand %s -l stdin:stdout -t cdn.example.com -d %%h:%%p\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "    Then simply: ssh remote.example.com\n\n")
 		fmt.Fprintf(os.Stderr, "Notes:\n")
 		fmt.Fprintf(os.Stderr, "  - Proxy authentication is supported via URL format user:pass@host\n")
 		fmt.Fprintf(os.Stderr, "  - SOCKS5 variant will resolve hostnames through the proxy\n")
@@ -552,7 +548,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "For more information: https://github.com/doxx/darkflare\n")
 	}
 
-	flag.IntVar(&localPort, "l", 0, "")
+	flag.StringVar(&localAddr, "l", "", "")
 	flag.StringVar(&targetURL, "t", "", "")
 	flag.StringVar(&destAddr, "d", "", "")
 	flag.BoolVar(&debug, "debug", false, "")
@@ -564,7 +560,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if localPort == 0 || targetURL == "" || destAddr == "" {
+	if localAddr == "" || targetURL == "" || destAddr == "" {
 		fmt.Fprintf(os.Stderr, "Error: -l, -t, and -d parameters are required\n\n")
 		flag.Usage()
 		os.Exit(1)
@@ -603,23 +599,40 @@ func main() {
 		log.Printf("Debug mode enabled")
 	}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", localPort))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Printf("DarkFlare client listening on port %d", localPort)
-	log.Printf("Connecting via %s://%s:%d", scheme, host, destPort)
-
-	for {
-		conn, err := listener.Accept()
+	if localAddr == "stdin:stdout" {
+		// Create client in stdin/stdout mode
+		client := NewClient(host, destPort, scheme, destAddr, debug, proxyURL)
+		// Use os.Stdin and os.Stdout as the connection
+		stdinStdout := &StdinStdoutConn{
+			Reader: os.Stdin,
+			Writer: os.Stdout,
+		}
+		client.handleConnection(stdinStdout)
+	} else {
+		// Parse port number for traditional mode
+		localPort, err := strconv.Atoi(localAddr)
 		if err != nil {
-			log.Printf("Error accepting connection: %v", err)
-			continue
+			log.Fatalf("Invalid local port: %v", err)
 		}
 
-		client := NewClient(host, destPort, scheme, destAddr, debug, proxyURL)
-		go client.handleConnection(conn)
+		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", localPort))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Printf("DarkFlare client listening on port %d", localPort)
+		log.Printf("Connecting via %s://%s:%d", scheme, host, destPort)
+
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("Error accepting connection: %v", err)
+				continue
+			}
+
+			client := NewClient(host, destPort, scheme, destAddr, debug, proxyURL)
+			go client.handleConnection(conn)
+		}
 	}
 }
 
@@ -670,3 +683,16 @@ func (c *Client) isDirectMode() bool {
 	ip := net.ParseIP(host)
 	return ip != nil || host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
+
+// StdinStdoutConn implements net.Conn interface for stdin/stdout
+type StdinStdoutConn struct {
+	io.Reader
+	io.Writer
+}
+
+func (c *StdinStdoutConn) Close() error                       { return nil }
+func (c *StdinStdoutConn) LocalAddr() net.Addr                { return &net.UnixAddr{Name: "stdin", Net: "unix"} }
+func (c *StdinStdoutConn) RemoteAddr() net.Addr               { return &net.UnixAddr{Name: "stdout", Net: "unix"} }
+func (c *StdinStdoutConn) SetDeadline(t time.Time) error      { return nil }
+func (c *StdinStdoutConn) SetReadDeadline(t time.Time) error  { return nil }
+func (c *StdinStdoutConn) SetWriteDeadline(t time.Time) error { return nil }
