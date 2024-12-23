@@ -4,6 +4,8 @@ A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your
 
 Join the Discord server for support and discussion: https://discord.gg/7wVKeP88
 
+Also if you like this tool, check out my other project: https://github.com/doxx/doxx.net which is a more advanced VPN based stealth system for avoiding countries and censorship. 
+
 ## 🤔 What is this sorcery?
 
 DarkFlare is a clever little tool that disguises your TCP traffic as innocent HTTPS requests, letting them pass through corporate firewalls like a VIP at a nightclub. It's like a tunnel, but with more style and less dirt.
