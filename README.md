@@ -35,7 +35,7 @@ AP NEWS
 [darkflare    │                │                  │                │ [darkflare
  client]──────┼───HTTPS───────>│ (looks like      │─-HTTPS-───────>│  server]
 localhost:2222│                │  normal traffic) │                │ :8080
-              │                │                  │                │
+or stdin/out  │                │                  │                │
               └────────────────┼──────────────────┼────────────────┘
                                │                  │
                                └──────────────────┘
