@@ -233,9 +233,9 @@ DarkFlare can create a sophisticated proxy chain when using SSH ProxyCommand mod
 [SSH Client]         [Optional Proxy]        [Cloudflare]         [Target]
     |                     |                      |                   |
     |                     |                      |                   |
-    |   stdin/stdout      |       HTTPS         |      TCP          |
-    | =================>  |  =================>  | =================> |
-    |  darkflare-client  |    CDN Traffic      |  darkflare-server |
+    |   stdin/stdout      |       HTTPS          |      TCP          |
+    | =================>  |  =================>  | =================>|
+    |  darkflare-client   |    CDN Traffic       |  darkflare-server |
     |                     |                      |                   |
     |                     |                      |                   |
     
