@@ -220,72 +220,6 @@ ssh -o ProxyCommand="darkflare-client -l stdin:stdout -t cdn.example.com -d loca
 - Maintains end-to-end encryption
 - Traffic still appears as normal HTTPS to observers
 
-## 🧙 Fileless Execution
-
-DarkFlare supports fileless execution on Windows systems using PowerShell, allowing you to run the client without saving any files to disk. This is particularly useful in restricted environments where:
-- You don't have write permissions to the local system
-- Security policies prevent executing downloaded binaries
-- You need to leave no traces on the filesystem
-- You want to run the client without installation or cleanup
-
-### PowerShell Memory Execution
-Save this as `memory-exec.ps1` or download from examples/:
-```powershell
-# See examples/memory-exec.ps1 in the repository
-param (
-    [Parameter(Mandatory=$true)]
-    [string]$t,
-    [Parameter(Mandatory=$true)]
-    [string]$d,
-    [Parameter(Mandatory=$false)]
-    [string]$l = "stdin:stdout",
-    [Parameter(Mandatory=$false)]
-    [string]$p
-)
-
-$url = "https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-windows-amd64.exe"
-$webClient = New-Object System.Net.WebClient
-$bytes = $webClient.DownloadData($url)
-$assembly = [System.Reflection.Assembly]::Load($bytes)
-$args = @("-l", $l, "-t", $t, "-d", $d)
-if ($p) { $args += @("-p", $p) }
-$assembly.EntryPoint.Invoke($null, @(,[string[]]$args))
-```
-
-### Usage Examples
-
-1. Direct SSH connection using ProxyCommand:
-```bash
-ssh -o ProxyCommand="powershell -ExecutionPolicy Bypass -File memory-exec.ps1 -t cdn.example.com -d localhost:22" user@remote
-```
-
-2. One-liner for immediate execution (no script file needed):
-```powershell
-$script = (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/doxx/darkflare/main/examples/memory-exec.ps1'); 
-powershell -Command $script -t cdn.example.com -d localhost:22
-```
-
-3. With a SOCKS5 proxy:
-```powershell
-powershell -ExecutionPolicy Bypass -File memory-exec.ps1 -t cdn.example.com -d localhost:22 -p socks5://proxy:1080
-```
-
-### Benefits
-- **No Installation Required**: Run directly from memory without installing
-- **No Filesystem Traces**: Leaves no artifacts on the local system
-- **Bypass Restrictions**: Works in environments with strict file execution policies
-- **Easy Cleanup**: No files to remove after use
-- **Latest Version**: Always downloads the latest release
-- **Portable**: Can be run from any PowerShell prompt with internet access
-
-### Security Considerations
-- Only download from trusted sources over HTTPS
-- Consider adding checksum verification for enhanced security
-- Be aware that some security software may detect/block memory execution
-- Use only in environments where you have permission to do so
-- The binary is still downloaded, just not saved to disk
-- Network administrators may still see the download traffic
-
 ## 🔄 Advanced SSH Integration
 
 ### Understanding the Proxy Chain
@@ -360,6 +294,73 @@ Then simply:
 ```bash
 ssh remote-server
 ```
+
+
+## 🧙 Fileless Execution
+
+DarkFlare supports fileless execution on Windows systems using PowerShell, allowing you to run the client without saving any files to disk. This is particularly useful in restricted environments where:
+- You don't have write permissions to the local system
+- Security policies prevent executing downloaded binaries
+- You need to leave no traces on the filesystem
+- You want to run the client without installation or cleanup
+
+### PowerShell Memory Execution
+Save this as `memory-exec.ps1` or download from examples/:
+```powershell
+# See examples/memory-exec.ps1 in the repository
+param (
+    [Parameter(Mandatory=$true)]
+    [string]$t,
+    [Parameter(Mandatory=$true)]
+    [string]$d,
+    [Parameter(Mandatory=$false)]
+    [string]$l = "stdin:stdout",
+    [Parameter(Mandatory=$false)]
+    [string]$p
+)
+
+$url = "https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-windows-amd64.exe"
+$webClient = New-Object System.Net.WebClient
+$bytes = $webClient.DownloadData($url)
+$assembly = [System.Reflection.Assembly]::Load($bytes)
+$args = @("-l", $l, "-t", $t, "-d", $d)
+if ($p) { $args += @("-p", $p) }
+$assembly.EntryPoint.Invoke($null, @(,[string[]]$args))
+```
+
+### Usage Examples
+
+1. Direct SSH connection using ProxyCommand:
+```bash
+ssh -o ProxyCommand="powershell -ExecutionPolicy Bypass -File memory-exec.ps1 -t cdn.example.com -d localhost:22" user@remote
+```
+
+2. One-liner for immediate execution (no script file needed):
+```powershell
+$script = (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/doxx/darkflare/main/examples/memory-exec.ps1'); 
+powershell -Command $script -t cdn.example.com -d localhost:22
+```
+
+3. With a SOCKS5 proxy:
+```powershell
+powershell -ExecutionPolicy Bypass -File memory-exec.ps1 -t cdn.example.com -d localhost:22 -p socks5://proxy:1080
+```
+
+### Benefits
+- **No Installation Required**: Run directly from memory without installing
+- **No Filesystem Traces**: Leaves no artifacts on the local system
+- **Bypass Restrictions**: Works in environments with strict file execution policies
+- **Easy Cleanup**: No files to remove after use
+- **Latest Version**: Always downloads the latest release
+- **Portable**: Can be run from any PowerShell prompt with internet access
+
+### Security Considerations
+- Only download from trusted sources over HTTPS
+- Consider adding checksum verification for enhanced security
+- Be aware that some security software may detect/block memory execution
+- Use only in environments where you have permission to do so
+- The binary is still downloaded, just not saved to disk
+- Network administrators may still see the download traffic
 
 ## 📖 Command Line Reference
 
