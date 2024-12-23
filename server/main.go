@@ -28,27 +28,29 @@ type Session struct {
 }
 
 type Server struct {
-	sessions    sync.Map
-	destHost    string
-	destPort    string
-	debug       bool
-	appCommand  string
-	isAppMode   bool
-	allowDirect bool
-	silent      bool
-	redirect    string
+	sessions     sync.Map
+	destHost     string
+	destPort     string
+	debug        bool
+	appCommand   string
+	isAppMode    bool
+	allowDirect  bool
+	silent       bool
+	redirect     string
+	overrideDest string
 }
 
-func NewServer(destHost, destPort string, appCommand string, debug bool, allowDirect bool, silent bool, redirect string) *Server {
+func NewServer(destHost, destPort string, appCommand string, debug bool, allowDirect bool, silent bool, redirect string, overrideDest string) *Server {
 	s := &Server{
-		destHost:    destHost,
-		destPort:    destPort,
-		debug:       debug,
-		appCommand:  appCommand,
-		isAppMode:   appCommand != "",
-		allowDirect: allowDirect,
-		silent:      silent,
-		redirect:    redirect,
+		destHost:     destHost,
+		destPort:     destPort,
+		debug:        debug,
+		appCommand:   appCommand,
+		isAppMode:    appCommand != "",
+		allowDirect:  allowDirect,
+		silent:       silent,
+		redirect:     redirect,
+		overrideDest: overrideDest,
 	}
 
 	if s.isAppMode && s.debug && !s.silent {
@@ -185,6 +187,21 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var destination string
+	if s.overrideDest != "" {
+		destination = s.overrideDest
+		if s.debug {
+			log.Printf("Using override destination: %s", destination)
+		}
+	} else {
+		destBytes, err := base64.StdEncoding.DecodeString(encodedDest)
+		if err != nil {
+			http.Error(w, "Invalid destination encoding", http.StatusBadRequest)
+			return
+		}
+		destination = string(destBytes)
+	}
+
 	// Check for connection termination
 	if r.Header.Get("X-Connection-Close") == "true" {
 		sessionDisplay := "no-session"
@@ -198,13 +215,6 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
-	destBytes, err := base64.StdEncoding.DecodeString(encodedDest)
-	if err != nil {
-		http.Error(w, "Invalid destination encoding", http.StatusBadRequest)
-		return
-	}
-	destination := string(destBytes)
 
 	// Always log basic connection info
 	sessionDisplay := "no-session"
@@ -428,6 +438,7 @@ func main() {
 	var appCommand string
 	var silent bool
 	var redirect string
+	var overrideDest string
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "DarkFlare Server - TCP-over-CDN tunnel server component\n")
@@ -451,6 +462,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "            Suppresses all non-error output\n\n")
 		fmt.Fprintf(os.Stderr, "  -redirect Custom URL to redirect unauthorized requests\n")
 		fmt.Fprintf(os.Stderr, "            Default: GitHub project page\n\n")
+		fmt.Fprintf(os.Stderr, "  -override-dest\n")
+		fmt.Fprintf(os.Stderr, "            Override client destination with server-side setting\n")
+		fmt.Fprintf(os.Stderr, "            Format: host:port\n")
+		fmt.Fprintf(os.Stderr, "            Default: Use client-provided destination\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic setup:\n")
 		fmt.Fprintf(os.Stderr, "    %s -o http://0.0.0.0:8080\n\n", os.Args[0])
@@ -473,6 +488,7 @@ func main() {
 	flag.BoolVar(&allowDirect, "allow-direct", false, "")
 	flag.BoolVar(&silent, "s", false, "")
 	flag.StringVar(&redirect, "redirect", "", "Custom URL to redirect unauthorized requests (default: GitHub project page)")
+	flag.StringVar(&overrideDest, "override-dest", "", "Override destination address (format: host:port)")
 	flag.Parse()
 
 	// Parse origin URL
@@ -501,7 +517,17 @@ func main() {
 		log.Printf("DarkFlare server listening on %s", origin)
 	}
 
-	server := NewServer(originHost, originPort, appCommand, debug, allowDirect, silent, redirect)
+	// If override-dest is provided, validate it
+	if overrideDest != "" {
+		if !isValidDestination(overrideDest) {
+			log.Fatal("Invalid override destination format")
+		}
+		if !silent {
+			log.Printf("Using server-side destination override: %s", overrideDest)
+		}
+	}
+
+	server := NewServer(originHost, originPort, appCommand, debug, allowDirect, silent, redirect, overrideDest)
 
 	log.Printf("DarkFlare server running on %s://%s:%s", originURL.Scheme, originHost, originPort)
 	if allowDirect {
