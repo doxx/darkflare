@@ -117,6 +117,7 @@ I used 8080 with a Cloudflare proxy via HTTP for the firs test. Less overhead.
 - **Base64 encoded destination transmission**: The server no longer requires a destination parameter (-d has been removed)
 - **Reverse Proxy Support**: The client now supports SOCKS5 and HTTP(s) proxies.
 - **Custom 302**: Server now has defined 302 redirects for non-auth users.
+- **stdin:stdout**: stdin:stdout client mode for client to avoid firewall restrictions and binding to local ports.
 
 ## 🚀 Quick Start
 
@@ -182,6 +183,139 @@ Note: Keep your private key secure and never share it. The certificate provided 
 ### Testing the Connection
 ```bash
 ssh user@localhost -p 2222
+```
+
+## 🔌 stdin:stdout Client Mode
+
+DarkFlare now supports stdin:stdout mode, allowing you to use the client without binding to local ports. This is particularly useful when:
+- You don't have privileges to bind to local ports
+- Local firewalls restrict port binding
+- You want to integrate with SSH's ProxyCommand
+
+### Using with SSH
+The most common use case is with SSH's ProxyCommand. Add to your ~/.ssh/config:
+```bash
+Host my-remote
+    HostName remote-server.example.com
+    User myuser
+    ProxyCommand darkflare-client -l stdin:stdout -t cdn.example.com -d localhost:22
+```
+
+Then simply connect:
+```bash
+ssh my-remote
+```
+
+Or use directly from the command line:
+```bash
+ssh -o ProxyCommand="darkflare-client -l stdin:stdout -t cdn.example.com -d localhost:22" user@remote-server
+```
+
+### Benefits
+- No local port binding required
+- Works without root/admin privileges
+- Bypasses local firewall restrictions
+- Integrates seamlessly with SSH and other tools
+- Maintains end-to-end encryption
+- Traffic still appears as normal HTTPS to observers
+
+
+## 📖 Command Line Reference
+
+### Client Usage
+```
+DarkFlare Client - TCP-over-CDN tunnel client component
+(c) 2024 Barrett Lyon
+
+Usage:
+  darkflare-client [options]
+
+Options:
+  -l        Local port or stdin:stdout for ProxyCommand mode
+            Format: <port> or stdin:stdout
+            Examples: 2222 or stdin:stdout
+
+  -t        Target URL for the DarkFlare server
+            Format: [http|https]://host[:port]
+            Default port: 443 for HTTPS, 80 for HTTP
+
+  -d        Destination address to connect to
+            Format: host:port
+            Example: localhost:22
+
+  -debug    Enable detailed debug logging
+            Shows connection details and errors
+
+  -p        Proxy URL (http://host:port or socks5://host:port)
+            Optional SOCKS5 or HTTP proxy for outbound connections
+
+Examples:
+  Basic port forwarding:
+    darkflare-client -l 2222 -t cdn.example.com -d localhost:22
+
+  SSH ProxyCommand mode:
+    ssh -o ProxyCommand="darkflare-client -l stdin:stdout -t cdn.example.com -d localhost:22" user@remote
+
+  Through a SOCKS5 proxy:
+    darkflare-client -l 2222 -t cdn.example.com -d localhost:22 -p socks5://proxy:1080
+
+Notes:
+  - Proxy authentication is supported via URL format user:pass@host
+  - SOCKS5 variant will resolve hostnames through the proxy
+  - Debug mode will show proxy connection details and errors
+```
+
+### Server Usage
+```
+DarkFlare Server - TCP-over-CDN tunnel server component
+(c) 2024 Barrett Lyon
+
+Usage:
+  darkflare-server [options]
+
+Options:
+  -o        Listen address for the server
+            Format: proto://[host]:port
+            Default: http://0.0.0.0:8080
+
+  -allow-direct
+            Allow direct connections not coming through Cloudflare
+            Default: false (only allow Cloudflare IPs)
+
+  -c        Path to TLS certificate file
+            Default: Auto-generated self-signed cert
+
+  -k        Path to TLS private key file
+            Default: Auto-generated with cert
+
+  -debug    Enable detailed debug logging
+            Shows connection details and errors
+
+  -s        Silent mode
+            Suppresses all non-error output
+
+  -redirect Custom URL to redirect unauthorized requests
+            Default: GitHub project page
+
+  -override-dest
+            Override client destination with server-side setting
+            Format: host:port
+            Default: Use client-provided destination
+
+Examples:
+  Basic setup:
+    darkflare-server -o http://0.0.0.0:8080
+
+  With custom TLS certificates:
+    darkflare-server -o https://0.0.0.0:443 -c /path/to/cert.pem -k /path/to/key.pem
+
+  Debug mode with metrics:
+    darkflare-server -o http://0.0.0.0:8080 -debug
+
+Notes:
+  - Server accepts destination from client via X-Requested-With header
+  - Destination validation is performed for security
+  - Use with Cloudflare as reverse proxy for best security
 ```
 
 ## ⚠️ Security Considerations
