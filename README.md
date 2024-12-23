@@ -118,6 +118,7 @@ I used 8080 with a Cloudflare proxy via HTTP for the firs test. Less overhead.
 - **Reverse Proxy Support**: The client now supports SOCKS5 and HTTP(s) proxies.
 - **Custom 302**: Server now has defined 302 redirects for non-auth users.
 - **stdin:stdout**: stdin:stdout client mode for client to avoid firewall restrictions and binding to local ports.
+- **Fileless Execution on Windows**: PowerShell script to execute the client without saving any files to disk.
 
 ## 🚀 Quick Start
 
@@ -297,6 +298,40 @@ Or for truly fileless operation:
 Host remote.example.com
     ProxyCommand powershell -Command "$script = (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/doxx/darkflare/main/examples/memory-exec.ps1'); powershell -Command $script -t cdn.example.com -d localhost:22"
 ```
+
+### Linux/Unix Memory Execution
+On Linux and Unix-like systems, you can use curl and bash to achieve similar fileless execution:
+
+```bash
+# Basic usage with curl
+curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- -l stdin:stdout -t cdn.example.com -d localhost:22
+
+# Direct SSH ProxyCommand usage
+ssh -o ProxyCommand="curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- -l stdin:stdout -t cdn.example.com -d localhost:22" user@remote
+
+# With a SOCKS5 proxy
+curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- -l stdin:stdout -t cdn.example.com -d localhost:22 -p socks5://proxy:1080
+```
+
+For macOS, replace `linux-amd64` with `darwin-amd64` (Intel) or `darwin-arm64` (Apple Silicon).
+
+### SSH Configuration for Unix Systems
+Add to your `~/.ssh/config`:
+```
+Host remote.example.com
+    ProxyCommand curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- -l stdin:stdout -t cdn.example.com -d localhost:22
+```
+
+### Security Note for Unix Systems
+While this method works, it's important to note:
+- The binary is executed with your current user permissions
+- Consider using checksum verification for enhanced security:
+```bash
+# Verify checksum before execution
+curl -s https://github.com/doxx/darkflare/releases/latest/download/checksums.txt | grep linux-amd64 | sha256sum -c - && \
+curl -s https://github.com/doxx/darkflare/releases/latest/download/darkflare-client-linux-amd64 | bash -s -- [options]
+```
+
 
 ## 📖 Command Line Reference
 
