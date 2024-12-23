@@ -106,8 +106,6 @@ Add your new proxy hostname into a free Cloudflare account.
 
 Setup your origin rules to send that host to the origin server (darkflare-server) via the proxy port you choose. 
 
-I used 8080 with a Cloudflare proxy via HTTP for the firs test. Less overhead.
-
 ## ✨ Features
 
 - **Sneaky TCP Tunneling**: Wraps your TCP connections in a fashionable HTTPS outfit
@@ -115,9 +113,9 @@ I used 8080 with a Cloudflare proxy via HTTP for the firs test. Less overhead.
 - **Debug Mode**: For when things go wrong and you need to know why (spoiler: it's always DNS)
 - **Session Management**: Keeps your connections organized like a Type A personality
 - **TLS Security**: Because we're sneaky, not reckless
-- **Client-controlled destination addressing**: The destination (-d) is now specified on the client side and securely transmitted to the server
+- **Client-controlled destination addressing**: The destination (-d) is now specified on the client side and securely transmitted to the server. This can be overridden by the server command -override-dest.
 - **Base64 encoded destination transmission**: The server no longer requires a destination parameter (-d has been removed)
-- **Reverse Proxy Support**: The client now supports SOCKS5 and HTTP(s) proxies.
+- **Reverse Proxy Support**: The client now supports SOCKS5 and HTTP(s) proxies via the -p flag on the client.
 - **Custom 302**: Server now has defined 302 redirects for non-auth users.
 - **stdin:stdout**: stdin:stdout client mode for client to avoid firewall restrictions and binding to local ports.
 - **Fileless Execution on Windows**: PowerShell script to execute the client without saving any files to disk.

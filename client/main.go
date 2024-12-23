@@ -530,7 +530,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "            Shows connection details, data transfer, and errors\n\n")
 		fmt.Fprintf(os.Stderr, "  -p        Proxy URL for outbound connections\n")
 		fmt.Fprintf(os.Stderr, "            Format: scheme://[user:pass@]host:port\n")
-		fmt.Fprintf(os.Stderr, "            Supported schemes: http, https, socks5, socks5h\n\n")
+		fmt.Fprintf(os.Stderr, "            Supported schemes: http, https, socks5\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  Basic SSH tunnel:\n")
 		fmt.Fprintf(os.Stderr, "    %s -l 2222 -t cdn.example.com -d ssh.target.com:22\n\n", os.Args[0])
