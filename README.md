@@ -2,7 +2,7 @@
 
 A stealthy command line tool to create TCP-over-CDN(http) tunnels that keep your connections cozy and comfortable. Now with public test relay servers!
 
-Join the Discord server for support and discussion: https://discord.gg/nNG2snhC
+Join the Discord server for support and discussion: https://discord.gg/Gr9rByrEzZ
 
 Also if you like this tool, check out my other project: https://github.com/doxx/doxx.net which is a more advanced VPN based stealth system for avoiding countries and censorship. 
 
@@ -432,4 +432,4 @@ MIT License - Because sharing is caring, but attribution is nice.
 ---
 *Built with ❤️ and a healthy dose of mischief*
 
-Join the Discord server for support and discussion: https://discord.gg/nNG2snhC
+Join the Discord server for support and discussion: https://discord.gg/Gr9rByrEzZ
